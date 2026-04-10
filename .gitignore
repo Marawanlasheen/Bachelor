@@ -1,1 +1,12 @@
 .env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# PAS assets (local)
+pas/*.pdf
+
+# Extracted question bank (contains solutions)
+pas_bank.local.json
