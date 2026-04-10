@@ -90,7 +90,7 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, chatHistory =
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -177,19 +177,20 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, chatHistory =
             This is the conversation history for this question
           </div>
         ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
+          <div className="flex gap-2 items-end">
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder="Ask a question..."
-              className="flex-1 px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              rows={1}
+              className="flex-1 min-h-[42px] max-h-44 resize-y overflow-y-auto px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || isSending}
-              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all disabled:opacity-50 disabled:hover:opacity-50"
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all disabled:opacity-50 disabled:hover:opacity-50 mb-1"
+              title="Send (Enter). New line: Shift+Enter"
             >
               <Send className="w-5 h-5" />
             </button>

@@ -4,7 +4,15 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .bank import _ensure_session_progress, _load_problem_bank, _mark_solved, _now_ms, _progress_summary
+from .bank import (
+	_ensure_session_progress,
+	_load_problem_bank,
+	_load_progress_store,
+	_mark_solved,
+	_now_ms,
+	_progress_summary,
+	_save_progress_store,
+)
 from .commands import _autograde_current_submission, _handle_local_commands
 from .llm import _run_chat_turn, _run_groq_only
 from .schemas import (
@@ -27,6 +35,7 @@ from .web import home
 async def _lifespan(app: FastAPI):
 	with BANK_LOCK:
 		_load_problem_bank()
+		_load_progress_store()
 	yield
 
 
@@ -85,6 +94,7 @@ def tracker_set_current(payload: SetCurrentRequest) -> dict[str, Any]:
 		progress.current_item_id = problem.item_id
 		progress.current_item_set_ms = _now_ms()
 		progress.updated_at_ms = _now_ms()
+		_save_progress_store()
 		return {
 			"status": "ok",
 			"session_id": payload.session_id,
@@ -133,6 +143,7 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 				state.last_submission_item_id = state.current_item_id
 				state.last_submission_ms = _now_ms()
 				state.updated_at_ms = _now_ms()
+				_save_progress_store()
 
 	# Local command router first (next question, "second question", etc.)
 	local_result, progress = _handle_local_commands(payload.session_id, payload.message)
@@ -202,6 +213,7 @@ def reset_chat_session(payload: ResetSessionRequest) -> dict[str, str]:
 	if not payload.keep_progress:
 		with BANK_LOCK:
 			PROGRESS_BY_SESSION.pop(payload.session_id, None)
+			_save_progress_store()
 	return {"status": "ok", "session_id": payload.session_id}
 
 

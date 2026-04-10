@@ -87,20 +87,48 @@ def parse_exercise_section(section: str) -> dict | None:
 	}
 
 
+def _item_sort_key(item_id: str) -> tuple[int, int, str]:
+	m = re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", item_id.strip())
+	if not m:
+		return (10_000, 10_000, item_id)
+	return (int(m.group(1)), int(m.group(2)), item_id)
+
+
+def build_problem_bank_from_pas_dir(pas_dir: Path | None = None) -> list[dict]:
+	base_dir = pas_dir or Path("pas")
+	if not base_dir.exists():
+		return []
+
+	pdf_files = sorted(base_dir.glob("PA*.pdf"), key=lambda p: p.name.lower())
+	if not pdf_files:
+		# Fallback to any PDF files if names are not PA*.pdf.
+		pdf_files = sorted(base_dir.glob("*.pdf"), key=lambda p: p.name.lower())
+
+	problems_by_id: dict[str, dict] = {}
+	for pdf_path in pdf_files:
+		try:
+			normalized = extract_text(pdf_path)
+			sections = split_exercises(normalized)
+		except Exception:
+			continue
+
+		for sec in sections:
+			problem = parse_exercise_section(sec)
+			if not problem:
+				continue
+			# Keep first seen item_id to avoid accidental duplicates across docs.
+			problems_by_id.setdefault(problem["item_id"], problem)
+
+	problems = list(problems_by_id.values())
+	problems.sort(key=lambda p: _item_sort_key(p.get("item_id", "")))
+	return problems
+
+
 def main() -> None:
-	pdf_path = Path("pas/PA1.pdf")
 	out_path = Path("pas_bank.local.json")
-
-	if not pdf_path.exists():
-		raise SystemExit(f"Missing {pdf_path}")
-
-	normalized = extract_text(pdf_path)
-	sections = split_exercises(normalized)
-	problems = []
-	for sec in sections:
-		problem = parse_exercise_section(sec)
-		if problem:
-			problems.append(problem)
+	problems = build_problem_bank_from_pas_dir(Path("pas"))
+	if not problems:
+		raise SystemExit("No exercises found. Make sure PDF files exist in pas/.")
 
 	out_path.write_text(json.dumps(problems, ensure_ascii=False, indent=2), encoding="utf-8")
 	print(f"Wrote {out_path} with {len(problems)} problems")

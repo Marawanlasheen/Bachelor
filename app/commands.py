@@ -15,6 +15,7 @@ from .bank import (
 	_normalize_item_id,
 	_now_ms,
 	_progress_summary,
+	_save_progress_store,
 )
 from .schemas import ModelResult, SessionProgress
 from . import state
@@ -147,6 +148,19 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		if not progress:
 			return None, None
 
+	def _guess_active_pa_number() -> int:
+		cur = _current_item(progress)
+		if cur:
+			m = re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", cur.item_id)
+			if m:
+				return int(m.group(1))
+		numbers: list[int] = []
+		for it in progress.items:
+			m = re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", it.item_id)
+			if m:
+				numbers.append(int(m.group(1)))
+		return min(numbers) if numbers else 1
+
 	# Specific question request (e.g., "second question", "question 2", "and the first one?")
 	# Keep this local so the model never invents a prompt.
 	ordinal_map: dict[str, int] = {
@@ -196,10 +210,17 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 			requested_n = ordinal_map.get(word_match.group(1).lower())
 
 	if requested_n is not None and 1 <= requested_n <= len(progress.items):
-		item_id = f"E1-{requested_n}"
+		pa_n = _guess_active_pa_number()
+		item_id = f"E{pa_n}-{requested_n}"
+		if not any(it.item_id.lower() == item_id.lower() for it in progress.items):
+			item_id = next(
+				(it.item_id for it in progress.items if re.fullmatch(rf"(?i)E\d+[-.]\s*{requested_n}", it.item_id)),
+				item_id,
+			)
 		# Set current item so follow-up questions (like "what does sms mean") have context.
 		progress.current_item_id = item_id
 		progress.current_item_set_ms = _now_ms()
+		_save_progress_store()
 		prompt = _bank_prompt(item_id) or ""
 		if prompt.strip():
 			text = prompt.strip()
@@ -229,10 +250,11 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 	):
 		next_item = _next_unsolved_item(progress)
 		if not next_item:
-			text = "You finished all questions in PA1."
+			text = "You finished all loaded questions."
 		else:
 			progress.current_item_id = next_item.item_id
 			progress.current_item_set_ms = _now_ms()
+			_save_progress_store()
 			prompt = _bank_prompt(next_item.item_id) or f"{next_item.item_id}: {next_item.title}"
 			text = prompt.strip()
 		return (
@@ -282,7 +304,19 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		current = _current_item(progress)
 		total = len(progress.items)
 		solved = sum(1 for it in progress.items if it.solved)
-		name = "PA1" if total else "(none loaded)"
+		pa_numbers = sorted(
+			{
+				int(m.group(1))
+				for it in progress.items
+				for m in [re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", it.item_id)]
+				if m
+			}
+		)
+		name = (
+			", ".join([f"PA{n}" for n in pa_numbers])
+			if pa_numbers
+			else "(none loaded)"
+		)
 		if current:
 			text = f"Right now I have {name} loaded with {total} exercises. You have solved {solved}/{total}. You are on {current.item_id}: {current.title}."
 		else:

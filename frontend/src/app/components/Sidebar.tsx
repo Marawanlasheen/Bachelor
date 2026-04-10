@@ -24,7 +24,7 @@ export function Sidebar({ activeView, onViewChange, isCollapsed, onToggleCollaps
   return (
     <motion.div
       initial={false}
-      animate={{ width: isCollapsed ? 90 : 280 }}
+		animate={{ width: isCollapsed ? 96 : 320 }}
       transition={{ duration: 0.3 }}
       className="bg-card border-r border-border flex flex-col relative"
     >
@@ -38,7 +38,7 @@ export function Sidebar({ activeView, onViewChange, isCollapsed, onToggleCollaps
             transition={{ duration: 0.2 }}
             className="p-6 border-b border-border"
           >
-            <h1 className="font-semibold text-primary">Codding Buddy</h1>
+      <h1 className="font-semibold text-primary">Your CodeBuddy</h1>
           </motion.div>
         )}
       </AnimatePresence>

@@ -48,6 +48,7 @@ export function CodeEditor({ question, onSolutionSubmit, viewingSolution }: Code
   };
 
   const isDarkMode = document.documentElement.classList.contains('dark');
+  const editorTitle = `Coding Workspace - ${question.id}`;
 
   return (
     <div className="h-full flex flex-col">
@@ -57,12 +58,12 @@ export function CodeEditor({ question, onSolutionSubmit, viewingSolution }: Code
         transition={{ duration: 0.3 }}
         className="bg-card border-b border-border p-4 flex items-center justify-between"
       >
-        <h3>{question.title}</h3>
-        <div className="flex items-center gap-2">
+		<h3>{editorTitle}</h3>
+		<div className="flex items-center gap-2 ml-3">
           <button
             onClick={handleRun}
             disabled={isRunning || viewingSolution}
-            className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+            className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50 ml-2"
           >
             <Play className="w-4 h-4" />
             <span className="text-sm">{isRunning ? 'Running...' : 'Run'}</span>

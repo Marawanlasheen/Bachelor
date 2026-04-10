@@ -42,7 +42,7 @@ def _build_chat_prompt(message: str, question: str, student_code: str) -> str:
 		parts.append("Student Message:\nHi tutor, can you help me?")
 
 	parts.append(
-		"Reply naturally as a tutor. Keep it short and give only one small next hint if needed."
+		"Reply naturally as a coding buddy. If the student asks a general coding question, answer that directly and do not force the conversation back to PA exercises. Keep it short and give only one small next hint if needed."
 	)
 	return "\n\n".join(parts)
 
@@ -145,9 +145,23 @@ def _build_chat_prompt_with_progress(session_id: str, message: str, question: st
 	if progress and progress.items:
 		solved = sum(1 for it in progress.items if it.solved)
 		total = len(progress.items)
-		context_parts.append(f"Assignment loaded: PA1 ({solved}/{total} solved).")
+		pa_numbers = sorted(
+			{
+				int(m.group(1))
+				for it in progress.items
+				for m in [re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", it.item_id)]
+				if m
+			}
+		)
+		pa_label = ", ".join([f"PA{n}" for n in pa_numbers]) if pa_numbers else "assignments"
+		context_parts.append(f"Loaded assignments: {pa_label} ({solved}/{total} solved).")
+
+		msg = " ".join([message.strip(), question.strip()]).lower()
+		is_assignment_related = bool(
+			re.search(r"\b(pa|assignment|exercise|question|next|solve|solved|done|e\d+[-.]\d+)\b", msg)
+		)
 		cur = _current_item(progress)
-		if cur:
+		if is_assignment_related and cur:
 			prompt = _bank_prompt(cur.item_id) or ""
 			if prompt.strip():
 				context_parts.append(f"Current question ({cur.item_id}):\n{prompt.strip()}")

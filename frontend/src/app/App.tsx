@@ -23,6 +23,12 @@ function computeProgressPercent(solved: number, total: number): number {
   return Math.round((solved / total) * 100);
 }
 
+function parseItemId(itemId: string): { pa: number; q: number } | null {
+  const m = itemId.trim().match(/^E\s*(\d+)\s*[-.]\s*(\d+)$/i);
+  if (!m) return null;
+  return { pa: Number(m[1]), q: Number(m[2]) };
+}
+
 export default function App() {
   const [sessionId] = useState<string>(() => getOrCreateSessionId());
   const [activeView, setActiveView] = useState<View>('chat');
@@ -65,17 +71,43 @@ export default function App() {
           chatHistory: [],
         }));
 
-        const solvedCount = questions.filter((q) => q.solved).length;
-        const assignment: Assignment = {
-          id: 'pa1',
-          title: 'PA1',
-          description: 'Practice Assignment 1',
-          dueDate: '',
-          progress: computeProgressPercent(solvedCount, questions.length),
-          questions,
-          pdfUrl: '',
-        };
-        setAssignments([assignment]);
+        const grouped = new Map<number, Assignment>();
+        for (const q of questions) {
+          const parsed = parseItemId(q.id);
+          const paNumber = parsed?.pa ?? 1;
+          const existing = grouped.get(paNumber);
+          if (!existing) {
+            grouped.set(paNumber, {
+              id: `pa${paNumber}`,
+              title: `PA${paNumber}`,
+              description: `Practice Assignment ${paNumber}`,
+              dueDate: '',
+              progress: 0,
+              questions: [q],
+              pdfUrl: '',
+            });
+          } else {
+            existing.questions.push(q);
+          }
+        }
+
+        const sortedAssignments = Array.from(grouped.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([, assignment]) => {
+            assignment.questions.sort((a, b) => {
+              const aParsed = parseItemId(a.id);
+              const bParsed = parseItemId(b.id);
+              if (!aParsed || !bParsed) return a.id.localeCompare(b.id);
+              return aParsed.q - bParsed.q;
+            });
+            const solvedCount = assignment.questions.filter((q) => q.solved).length;
+            return {
+              ...assignment,
+              progress: computeProgressPercent(solvedCount, assignment.questions.length),
+            };
+          });
+
+        setAssignments(sortedAssignments);
       } catch {
         setAssignments([]);
       }
@@ -134,7 +166,6 @@ export default function App() {
       const solvedIds = res.progress?.solved_ids ?? [];
       setAssignments((prev) =>
         prev.map((a) => {
-          if (a.id !== selectedAssignmentId) return a;
           const updatedQuestions = a.questions.map((q) => ({
             ...q,
             solved: solvedIds.includes(q.id),

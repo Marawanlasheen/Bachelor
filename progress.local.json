@@ -1,0 +1,218 @@
+{
+  "sessions": {
+    "9a0505ed-e04c-428f-bdff-3953541d33b9": {
+      "items": [
+        {
+          "item_id": "E1-1",
+          "title": "Errors and Conventions",
+          "solved": true
+        },
+        {
+          "item_id": "E1-2",
+          "title": "Java Expressions",
+          "solved": false
+        },
+        {
+          "item_id": "E1-3",
+          "title": "Time",
+          "solved": false
+        },
+        {
+          "item_id": "E1-4",
+          "title": "Number Precision, Exactness",
+          "solved": false
+        },
+        {
+          "item_id": "E1-5",
+          "title": "Cook in a Hurry",
+          "solved": false
+        },
+        {
+          "item_id": "E1-6",
+          "title": "Octal Conversion",
+          "solved": false
+        },
+        {
+          "item_id": "E1-7",
+          "title": "Supermarket Change",
+          "solved": false
+        },
+        {
+          "item_id": "E1-8",
+          "title": "Electrical Resistance",
+          "solved": false
+        },
+        {
+          "item_id": "E1-9",
+          "title": "Temperature Conversion",
+          "solved": false
+        },
+        {
+          "item_id": "E2-1",
+          "title": "Java Expressions",
+          "solved": false
+        },
+        {
+          "item_id": "E2-2",
+          "title": "Code Refactoring",
+          "solved": false
+        },
+        {
+          "item_id": "E2-3",
+          "title": "T o be discussed in T utorial",
+          "solved": false
+        },
+        {
+          "item_id": "E2-4",
+          "title": "Calculator",
+          "solved": false
+        },
+        {
+          "item_id": "E2-5",
+          "title": "Maximum",
+          "solved": false
+        },
+        {
+          "item_id": "E2-6",
+          "title": "Cartesian Plane",
+          "solved": false
+        },
+        {
+          "item_id": "E2-7",
+          "title": "Minimum",
+          "solved": false
+        },
+        {
+          "item_id": "E2-8",
+          "title": "Quadratic Equation",
+          "solved": false
+        },
+        {
+          "item_id": "E2-9",
+          "title": "Tire’s Pressure",
+          "solved": false
+        },
+        {
+          "item_id": "E3-1",
+          "title": "Zodiac",
+          "solved": false
+        },
+        {
+          "item_id": "E3-2",
+          "title": "ATM",
+          "solved": false
+        },
+        {
+          "item_id": "E3-3",
+          "title": "Caesar Cipher",
+          "solved": false
+        },
+        {
+          "item_id": "E3-4",
+          "title": "String Manipulation I",
+          "solved": false
+        },
+        {
+          "item_id": "E3-5",
+          "title": "Score",
+          "solved": false
+        },
+        {
+          "item_id": "E3-6",
+          "title": "Fixed Length",
+          "solved": false
+        },
+        {
+          "item_id": "E3-7",
+          "title": "Stream of Numbers",
+          "solved": false
+        },
+        {
+          "item_id": "E3-8",
+          "title": "Months",
+          "solved": false
+        },
+        {
+          "item_id": "E3-9",
+          "title": "Adder",
+          "solved": false
+        },
+        {
+          "item_id": "E3-10",
+          "title": "Euclidean Algorithm",
+          "solved": false
+        },
+        {
+          "item_id": "E3-11",
+          "title": "String Manipulation II",
+          "solved": false
+        },
+        {
+          "item_id": "E3-12",
+          "title": "String Manipulation III",
+          "solved": false
+        },
+        {
+          "item_id": "E4-1",
+          "title": "Stream of Numbers",
+          "solved": false
+        },
+        {
+          "item_id": "E4-2",
+          "title": "Pyramid",
+          "solved": false
+        },
+        {
+          "item_id": "E4-3",
+          "title": "Contains",
+          "solved": false
+        },
+        {
+          "item_id": "E4-4",
+          "title": "Run Length I",
+          "solved": false
+        },
+        {
+          "item_id": "E4-5",
+          "title": "Run Length II",
+          "solved": false
+        },
+        {
+          "item_id": "E4-6",
+          "title": "Midterm Spring 2013- Snake Eye",
+          "solved": false
+        },
+        {
+          "item_id": "E4-7",
+          "title": "Square N",
+          "solved": false
+        },
+        {
+          "item_id": "E4-8",
+          "title": "Divisors",
+          "solved": false
+        },
+        {
+          "item_id": "E4-9",
+          "title": "Word Count",
+          "solved": false
+        },
+        {
+          "item_id": "E4-10",
+          "title": "Number of Digits",
+          "solved": false
+        },
+        {
+          "item_id": "E4-11",
+          "title": "Extract Numbers",
+          "solved": false
+        }
+      ],
+      "current_item_id": "E1-1",
+      "current_item_set_ms": 1775844992530,
+      "last_submission_item_id": null,
+      "last_submission_ms": 0,
+      "updated_at_ms": 1775845443465
+    }
+  }
+}

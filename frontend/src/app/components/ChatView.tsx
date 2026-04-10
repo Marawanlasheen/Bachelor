@@ -7,7 +7,7 @@ import { chat } from '../api/tutorApi';
 const DEFAULT_MESSAGE: ChatMessage = {
   id: '1',
   sender: 'ai',
-  message: "Hi! I'm Codding Buddy. I'm here to help you with your Java programming questions. What would you like to learn today?",
+  message: "Hi! I'm your Codding Buddy. I can help with assignments, coding questions, and debugging. What do you want to work on first?",
   timestamp: Date.now(),
 };
 
@@ -64,7 +64,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -78,23 +78,24 @@ export function ChatView({ sessionId }: { sessionId: string }) {
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3 }}
-          className="w-full max-w-2xl px-8"
+          className="w-full max-w-3xl px-8"
         >
-          <h1 className="text-center mb-12">What's on your mind today?</h1>
+      <h1 className="mb-6 text-left pl-2">What shold we debug together today</h1>
 
-          <div className="flex gap-3 items-center">
-            <input
-              type="text"
+          <div className="flex gap-3 items-end">
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder="Ask anything"
-              className="flex-1 px-6 py-4 rounded-full border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+              rows={1}
+              className="flex-1 min-h-[56px] max-h-48 resize-y overflow-y-auto px-6 py-4 rounded-full border border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary transition-all"
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || isSending}
-              className="p-3 rounded-full bg-secondary hover:bg-secondary/70 transition-colors disabled:opacity-50"
+              className="p-3 rounded-full bg-secondary hover:bg-secondary/70 transition-colors disabled:opacity-50 mb-1"
+              title="Send (Enter). New line: Shift+Enter"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -156,18 +157,19 @@ export function ChatView({ sessionId }: { sessionId: string }) {
         className="border-t border-border bg-card p-6"
       >
         <div className="max-w-4xl mx-auto w-full flex gap-3">
-          <input
-            type="text"
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder="Type your message here..."
-            className="flex-1 px-6 py-4 rounded-full border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+            rows={1}
+            className="flex-1 min-h-[56px] max-h-48 resize-y overflow-y-auto px-6 py-4 rounded-full border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary transition-all"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isSending}
-            className="px-6 py-4 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all disabled:opacity-50 disabled:hover:opacity-50 flex items-center gap-2"
+            className="px-6 py-4 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-all disabled:opacity-50 disabled:hover:opacity-50 flex items-center gap-2 self-end"
+            title="Send (Enter). New line: Shift+Enter"
           >
             <Send className="w-5 h-5" />
           </button>

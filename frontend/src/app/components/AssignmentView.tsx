@@ -33,6 +33,8 @@ export function AssignmentView({
   const [showSolutionDialog, setShowSolutionDialog] = useState(false);
   const selectedQuestion = assignment.questions.find(q => q.id === selectedQuestionId);
 
+  const codingTitle = selectedQuestion ? `Coding Challenge ${selectedQuestion.id}` : 'Coding Challenge';
+
   const handleDownload = () => {
     console.log('Downloading PDF for:', assignment.pdfUrl);
   };
@@ -267,8 +269,8 @@ export function AssignmentView({
               transition={{ duration: 0.3, delay: 0.1 }}
               className="bg-card border-b border-border p-6 overflow-y-auto h-full"
             >
-              <h2 className="mb-3">{selectedQuestion.title}</h2>
-              <p className="text-muted-foreground mb-4">{selectedQuestion.prompt || selectedQuestion.description}</p>
+			  <h2 className="mb-3">{codingTitle}</h2>
+			  <p className="text-muted-foreground mb-4 whitespace-pre-line leading-8">{selectedQuestion.prompt || selectedQuestion.description}</p>
 
               {selectedQuestion.examples && (
                 <div className="space-y-3">
