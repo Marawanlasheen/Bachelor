@@ -157,10 +157,13 @@ def _build_chat_prompt_with_progress(session_id: str, message: str, question: st
 		context_parts.append(f"Loaded assignments: {pa_label} ({solved}/{total} solved).")
 
 		msg = " ".join([message.strip(), question.strip()]).lower()
+		cur = _current_item(progress)
+		# If the student asks for help without naming the PA/exercise (e.g., "I'm stuck"),
+		# still attach the current exercise context so the model doesn't guess.
 		is_assignment_related = bool(
 			re.search(r"\b(pa|assignment|exercise|question|next|solve|solved|done|e\d+[-.]\d+)\b", msg)
+			or (cur and re.search(r"\b(stuck|help|confused|not\s+working|doesn't\s+work|error|exception|fails|wrong)\b", msg))
 		)
-		cur = _current_item(progress)
 		if is_assignment_related and cur:
 			prompt = _bank_prompt(cur.item_id) or ""
 			if prompt.strip():

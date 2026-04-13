@@ -148,6 +148,94 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		if not progress:
 			return None, None
 
+	def _set_current_and_return_prompt(item_id: str, reason: str) -> tuple[ModelResult, dict[str, object] | None]:
+		progress.current_item_id = item_id
+		progress.current_item_set_ms = _now_ms()
+		_save_progress_store()
+		prompt = _bank_prompt(item_id) or ""
+		text = prompt.strip() if prompt.strip() else f"{item_id}: Exercise"
+		return (
+			ModelResult(
+				provider="local",
+				model="pa-tracker",
+				response=text,
+				latency_ms=0,
+				direct_answer_risk=False,
+				direct_answer_reason=reason,
+				error=None,
+			),
+			_progress_summary(session_id),
+		)
+
+	# Explicit item id request: "E3-1", "3-1", "3.1"
+	# Keep this local so we never invent prompts.
+	explicit_id_match = re.search(r"(?i)\bE?\s*\d+\s*[-.]\s*\d+\b", msg)
+	if explicit_id_match:
+		item_id = _normalize_item_id(explicit_id_match.group(0))
+		if item_id and any(it.item_id.lower() == item_id.lower() for it in progress.items):
+			return _set_current_and_return_prompt(item_id, "Local explicit-item")
+
+	# PA + exercise request: "PA3 ex 1", "ex1 in pa 3", "EX3 from P3", etc.
+	# Accept "P3" as a common shorthand for "PA3".
+	pa_match = re.search(r"(?i)\b(?:pa|p)\s*#?\s*(\d{1,2})\b", msg)
+	ex_match = re.search(r"(?i)\b(ex|exer|exercise|question|q)\s*#?\s*(\d{1,2})\b", msg)
+	if pa_match:
+		try:
+			pa_n = int(pa_match.group(1))
+		except Exception:
+			pa_n = None
+		requested_n: int | None = None
+		if ex_match:
+			try:
+				requested_n = int(ex_match.group(2))
+			except Exception:
+				requested_n = None
+		# Also accept ordinal words when PA is specified ("first exercise", "second question", ...)
+		if requested_n is None:
+			ordinal_map: dict[str, int] = {
+				"first": 1,
+				"1st": 1,
+				"one": 1,
+				"second": 2,
+				"2nd": 2,
+				"two": 2,
+				"third": 3,
+				"3rd": 3,
+				"three": 3,
+				"fourth": 4,
+				"4th": 4,
+				"four": 4,
+				"fifth": 5,
+				"5th": 5,
+				"five": 5,
+				"sixth": 6,
+				"6th": 6,
+				"six": 6,
+				"seventh": 7,
+				"7th": 7,
+				"seven": 7,
+				"eighth": 8,
+				"8th": 8,
+				"eight": 8,
+				"ninth": 9,
+				"9th": 9,
+				"nine": 9,
+			}
+			word_match = re.search(
+				r"(?i)\b(first|1st|one|second|2nd|two|third|3rd|three|fourth|4th|four|fifth|5th|five|sixth|6th|six|seventh|7th|seven|eighth|8th|eight|ninth|9th|nine)\b\s+(question|problem|exercise|ex|one)\b",
+				msg,
+			)
+			if word_match:
+				requested_n = ordinal_map.get(word_match.group(1).lower())
+
+		if pa_n is not None:
+			if requested_n is None:
+				# If they only specify the PA, default to the first exercise in that PA.
+				requested_n = 1
+			item_id = f"E{pa_n}-{requested_n}"
+			if any(it.item_id.lower() == item_id.lower() for it in progress.items):
+				return _set_current_and_return_prompt(item_id, "Local pa+exercise")
+
 	def _guess_active_pa_number() -> int:
 		cur = _current_item(progress)
 		if cur:
@@ -201,9 +289,10 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		except Exception:
 			requested_n = None
 	else:
-		# Words: "second question", "and the first one"
+		# Words: require explicit context like "first exercise" / "second question" / "the first one".
+		# This avoids misreading chat phrases like "send it to me first" as an exercise selector.
 		word_match = re.search(
-			r"(?i)\b(first|1st|one|second|2nd|two|third|3rd|three|fourth|4th|four|fifth|5th|five|sixth|6th|six|seventh|7th|seven|eighth|8th|eight|ninth|9th|nine)\b\s*(question|problem|exercise)?\b",
+			r"(?i)\b(first|1st|one|second|2nd|two|third|3rd|three|fourth|4th|four|fifth|5th|five|sixth|6th|six|seventh|7th|seven|eighth|8th|eight|ninth|9th|nine)\b\s+(question|problem|exercise|one)\b",
 			msg,
 		)
 		if word_match:

@@ -146,7 +146,8 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 				_save_progress_store()
 
 	# Local command router first (next question, "second question", etc.)
-	local_result, progress = _handle_local_commands(payload.session_id, payload.message)
+	local_text = " ".join([payload.message.strip(), payload.question.strip()]).strip()
+	local_result, progress = _handle_local_commands(payload.session_id, local_text)
 	if local_result is not None:
 		raw_result = local_result.model_dump()
 		return ChatResponse(
