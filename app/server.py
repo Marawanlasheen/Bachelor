@@ -14,6 +14,7 @@ from .bank import (
 	_save_progress_store,
 )
 from .commands import _autograde_current_submission, _handle_local_commands
+from .compiler import compile_and_run_java
 from .llm import _run_chat_turn, _run_groq_only
 from .schemas import (
 	BankItemPublic,
@@ -21,6 +22,8 @@ from .schemas import (
 	ChatResponse,
 	CompareRequest,
 	CompareResponse,
+	JavaCompileRequest,
+	JavaCompileResponse,
 	ModelResult,
 	ResetSessionRequest,
 	SetCurrentRequest,
@@ -146,7 +149,10 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 				_save_progress_store()
 
 	# Local command router first (next question, "second question", etc.)
-	local_text = " ".join([payload.message.strip(), payload.question.strip()]).strip()
+	# Route local commands from the student's explicit message only.
+	# Including payload.question here causes false positives like matching
+	# "Exercise 3-8" from the prompt itself.
+	local_text = payload.message.strip()
 	local_result, progress = _handle_local_commands(payload.session_id, local_text)
 	if local_result is not None:
 		raw_result = local_result.model_dump()
@@ -206,6 +212,12 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 		result=ModelResult(**raw_result),
 		progress=progress,
 	)
+
+
+@app.post("/compile/java", response_model=JavaCompileResponse)
+async def compile_java(payload: JavaCompileRequest) -> JavaCompileResponse:
+	result = compile_and_run_java(payload.code, payload.timeout_sec)
+	return JavaCompileResponse(**result)
 
 
 @app.post("/chat/reset")

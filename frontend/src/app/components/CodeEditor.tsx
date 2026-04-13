@@ -4,15 +4,17 @@ import { Resizable } from 're-resizable';
 import Editor from '@monaco-editor/react';
 import { Play, Check } from 'lucide-react';
 import { Question, ChatMessage } from '../types';
+import { compileJava } from '../api/tutorApi';
 
 interface CodeEditorProps {
   question: Question;
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
+  onCodeChange: (questionId: string, code: string) => void;
   viewingSolution?: boolean;
 }
 
-export function CodeEditor({ question, onSolutionSubmit, viewingSolution }: CodeEditorProps) {
-  const [code, setCode] = useState(question.solution || question.starterCode || '');
+export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSolution }: CodeEditorProps) {
+  const [code, setCode] = useState(question.currentCode || question.solution || question.starterCode || '');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -21,17 +23,45 @@ export function CodeEditor({ question, onSolutionSubmit, viewingSolution }: Code
   useEffect(() => {
     if (viewingSolution && question.solution) {
       setCode(question.solution);
-    } else if (!viewingSolution) {
-      setCode(question.starterCode || '');
+      return;
     }
-  }, [viewingSolution, question]);
 
-  const handleRun = () => {
+    setCode(question.currentCode || question.solution || question.starterCode || '');
+  }, [viewingSolution, question.id, question.currentCode, question.solution, question.starterCode]);
+
+  const handleRun = async () => {
+    if (viewingSolution || isRunning) return;
+
     setIsRunning(true);
-    setTimeout(() => {
-      setOutput('// Compilation successful!\n// Output:\nHello, World!\n\n// Note: This is a simulated output. In production, this would connect to a real Java compiler.');
+
+    try {
+      const result = await compileJava({ code, timeoutSec: 4 });
+      const sections: string[] = [];
+
+      if (result.compile_success) {
+        sections.push(`// Compiled class: ${result.class_name}`);
+      } else {
+        sections.push('// Compilation failed');
+      }
+
+      if (result.stdout.trim()) {
+        sections.push('// Stdout:\n' + result.stdout.trim());
+      }
+
+      if (result.stderr.trim()) {
+        sections.push('// Stderr:\n' + result.stderr.trim());
+      }
+
+      if (!sections.length) {
+        sections.push('// No output');
+      }
+
+      setOutput(sections.join('\n\n'));
+    } catch (e) {
+      setOutput(e instanceof Error ? `// Error\n${e.message}` : '// Error running code');
+    } finally {
       setIsRunning(false);
-    }, 1000);
+    }
   };
 
   const handleSubmit = async () => {
@@ -108,7 +138,12 @@ export function CodeEditor({ question, onSolutionSubmit, viewingSolution }: Code
               height="100%"
               defaultLanguage="java"
               value={code}
-              onChange={(value) => !viewingSolution && setCode(value || '')}
+              onChange={(value) => {
+                if (viewingSolution) return;
+                const nextCode = value || '';
+                setCode(nextCode);
+                onCodeChange(question.id, nextCode);
+              }}
               theme={isDarkMode ? 'vs-dark' : 'vs-light'}
               options={{
                 minimap: { enabled: false },

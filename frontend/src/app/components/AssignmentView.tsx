@@ -10,8 +10,9 @@ interface AssignmentViewProps {
   assignment: Assignment;
   sessionId: string;
   onBack: () => void;
-  onQuestionSelect: (questionId: string) => void;
+  onQuestionSelect: (questionId: string | null) => void;
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
+  onCodeChange: (questionId: string, code: string) => void;
   onQuestionReset: (questionId: string) => void;
   onToggleQuestionSolved: (questionId: string) => void;
   selectedQuestionId: string | null;
@@ -23,6 +24,7 @@ export function AssignmentView({
   onBack,
   onQuestionSelect,
   onSolutionSubmit,
+  onCodeChange,
   onQuestionReset,
   onToggleQuestionSolved,
   selectedQuestionId,
@@ -179,7 +181,7 @@ export function AssignmentView({
       >
         <button
           onClick={() => {
-            onQuestionSelect(null as any);
+            onQuestionSelect(null);
             setViewingSolution(false);
           }}
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/30 rounded-lg px-2 py-1 transition-all"
@@ -305,6 +307,7 @@ export function AssignmentView({
             <CodeEditor
               question={selectedQuestion}
               onSolutionSubmit={onSolutionSubmit}
+              onCodeChange={onCodeChange}
               viewingSolution={viewingSolution}
             />
           </motion.div>
@@ -339,6 +342,7 @@ export function AssignmentView({
                 sessionId={sessionId}
                 questionId={selectedQuestion.id}
                 questionPrompt={selectedQuestion.prompt || selectedQuestion.description}
+                currentCode={selectedQuestion.currentCode || selectedQuestion.solution || selectedQuestion.starterCode || ''}
                 chatHistory={selectedQuestion.chatHistory || []}
                 viewingHistory={viewingSolution}
                 onClose={() => setChatPanelOpen(false)}

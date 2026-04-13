@@ -23,6 +23,7 @@ export interface Question {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   solved: boolean;
   starterCode?: string;
+  currentCode?: string;
   solution?: string;
   chatHistory?: ChatMessage[];
   examples?: {

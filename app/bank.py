@@ -100,7 +100,8 @@ def _load_progress_store() -> None:
 				loaded[str(session_id)] = SessionProgress(**progress_raw)
 			except Exception:
 				continue
-		state.PROGRESS_BY_SESSION = loaded
+		state.PROGRESS_BY_SESSION.clear()
+		state.PROGRESS_BY_SESSION.update(loaded)
 	except Exception:
 		return
 

@@ -29,6 +29,15 @@ export interface BankItemPublic {
   prompt: string;
 }
 
+export interface JavaCompileResponse {
+  compile_success: boolean;
+  run_success: boolean;
+  class_name: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+}
+
 async function parseJsonOrThrow(response: Response) {
   const text = await response.text();
   try {
@@ -98,4 +107,26 @@ export async function listBankItems(): Promise<BankItemPublic[]> {
     throw new Error(`HTTP ${response.status}`);
   }
   return (await response.json()) as BankItemPublic[];
+}
+
+export async function compileJava(params: {
+  code: string;
+  timeoutSec?: number;
+}): Promise<JavaCompileResponse> {
+  const response = await fetch('/compile/java', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: params.code,
+      timeout_sec: params.timeoutSec ?? 4,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return (await response.json()) as JavaCompileResponse;
 }

@@ -25,6 +25,7 @@ export default defineConfig({
       '/chat': 'http://127.0.0.1:8001',
       '/chat/reset': 'http://127.0.0.1:8001',
       '/compare': 'http://127.0.0.1:8001',
+      '/compile': 'http://127.0.0.1:8001',
       '/health': 'http://127.0.0.1:8001',
       '/tracker': 'http://127.0.0.1:8001',
       '/bank': 'http://127.0.0.1:8001',

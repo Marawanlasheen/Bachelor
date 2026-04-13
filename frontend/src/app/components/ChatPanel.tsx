@@ -8,6 +8,7 @@ interface ChatPanelProps {
   sessionId: string;
   questionId?: string;
   questionPrompt?: string;
+  currentCode?: string;
   chatHistory?: ChatMessage[];
   viewingHistory?: boolean;
   onClose?: () => void;
@@ -20,7 +21,7 @@ const DEFAULT_MESSAGE: ChatMessage = {
   timestamp: Date.now(),
 };
 
-export function ChatPanel({ sessionId, questionId, questionPrompt, chatHistory = [], viewingHistory = false, onClose }: ChatPanelProps) {
+export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode = '', chatHistory = [], viewingHistory = false, onClose }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_MESSAGE]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -69,6 +70,7 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, chatHistory =
         sessionId,
         message: userMessage.message,
         question: questionPrompt ?? '',
+        studentCode: currentCode,
       });
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),

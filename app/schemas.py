@@ -19,6 +19,20 @@ class ChatRequest(BaseModel):
 	temperature: float = 0.2
 
 
+class JavaCompileRequest(BaseModel):
+	code: str = Field(..., min_length=1)
+	timeout_sec: float = 4.0
+
+
+class JavaCompileResponse(BaseModel):
+	compile_success: bool
+	run_success: bool
+	class_name: str
+	stdout: str
+	stderr: str
+	exit_code: int | None = None
+
+
 class ResetSessionRequest(BaseModel):
 	session_id: str = Field(..., min_length=1)
 	keep_progress: bool = False

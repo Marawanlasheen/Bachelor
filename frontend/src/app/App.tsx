@@ -4,13 +4,12 @@ import { ChatView } from './components/ChatView';
 import { LecturesList } from './components/LecturesList';
 import { AssignmentsList } from './components/AssignmentsList';
 import { AssignmentView } from './components/AssignmentView';
-import { LectureView } from './components/LectureView';
 import { mockLectures } from './data/mockData';
-import { Lecture, Assignment } from './types';
+import { Lecture, Assignment, ChatMessage } from './types';
 import { getOrCreateSessionId } from './api/session';
 import { chat, getTrackerStatus, listBankItems, setCurrentItem } from './api/tutorApi';
 
-type View = 'chat' | 'lectures' | 'lecture-detail' | 'assignments' | 'assignment-detail';
+type View = 'chat' | 'lectures' | 'assignments' | 'assignment-detail';
 
 function shortDescription(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
@@ -34,7 +33,6 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>('chat');
   const [lectures, setLectures] = useState<Lecture[]>(mockLectures);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [selectedLectureId, setSelectedLectureId] = useState<string | null>(null);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
@@ -68,6 +66,7 @@ export default function App() {
           difficulty: 'Easy' as const,
           solved: solvedIds.includes(it.item_id),
           starterCode: '',
+          currentCode: '',
           chatHistory: [],
         }));
 
@@ -118,12 +117,11 @@ export default function App() {
 
   const handleViewChange = (view: 'chat' | 'lectures' | 'assignments') => {
     setActiveView(view);
-    setSelectedLectureId(null);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
   };
 
-  const handleLectureClick = (id: string) => {
+  const handleLectureClick = (_id: string) => {
     // Lectures are no longer clickable to open
   };
 
@@ -142,7 +140,7 @@ export default function App() {
     setActiveView('assignment-detail');
   };
 
-  const handleQuestionSelect = (questionId: string) => {
+  const handleQuestionSelect = (questionId: string | null) => {
     setSelectedQuestionId(questionId);
 
     if (questionId) {
@@ -150,7 +148,7 @@ export default function App() {
     }
   };
 
-  const handleSolutionSubmit = async (questionId: string, code: string, chatHistory: any[]) => {
+  const handleSolutionSubmit = async (questionId: string, code: string, chatHistory: ChatMessage[]) => {
     const assignment = assignments.find((a) => a.id === selectedAssignmentId);
     const question = assignment?.questions.find((q) => q.id === questionId);
 
@@ -169,6 +167,7 @@ export default function App() {
           const updatedQuestions = a.questions.map((q) => ({
             ...q,
             solved: solvedIds.includes(q.id),
+            currentCode: q.id === questionId ? code : q.currentCode,
             solution: q.id === questionId ? code : q.solution,
             chatHistory: q.id === questionId ? chatHistory : q.chatHistory,
           }));
@@ -189,7 +188,7 @@ export default function App() {
         if (assignment.id !== selectedAssignmentId) return assignment;
 
         const updatedQuestions = assignment.questions.map((q) =>
-          q.id === questionId ? { ...q, solution: undefined, chatHistory: [] } : q
+          q.id === questionId ? { ...q, solution: undefined, currentCode: q.starterCode || '', chatHistory: [] } : q
         );
 
         return {
@@ -221,7 +220,23 @@ export default function App() {
     );
   };
 
-  const selectedLecture = lectures.find((l) => l.id === selectedLectureId);
+  const handleCodeChange = (questionId: string, code: string) => {
+    setAssignments((prev) =>
+      prev.map((assignment) => {
+        if (assignment.id !== selectedAssignmentId) return assignment;
+
+        const updatedQuestions = assignment.questions.map((q) =>
+          q.id === questionId ? { ...q, currentCode: code } : q
+        );
+
+        return {
+          ...assignment,
+          questions: updatedQuestions,
+        };
+      })
+    );
+  };
+
   const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId);
 
   return (
@@ -255,6 +270,7 @@ export default function App() {
             onBack={() => setActiveView('assignments')}
             onQuestionSelect={handleQuestionSelect}
             onSolutionSubmit={handleSolutionSubmit}
+            onCodeChange={handleCodeChange}
             onQuestionReset={handleQuestionReset}
             onToggleQuestionSolved={handleToggleQuestionSolved}
             selectedQuestionId={selectedQuestionId}
