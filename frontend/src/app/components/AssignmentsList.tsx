@@ -1,4 +1,4 @@
-import { FileText, Download } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Assignment } from '../types';
 
@@ -8,11 +8,6 @@ interface AssignmentsListProps {
 }
 
 export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsListProps) {
-  const handleDownload = (e: React.MouseEvent, assignment: Assignment) => {
-    e.stopPropagation();
-    console.log('Downloading PDF for:', assignment.pdfUrl);
-  };
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-8 max-w-7xl mx-auto">
@@ -59,13 +54,6 @@ export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsL
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => handleDownload(e, assignment)}
-                      className="p-2 hover:bg-secondary/50 rounded-lg transition-colors"
-                      title="Download PDF"
-                    >
-                      <Download className="w-5 h-5 text-muted-foreground" />
-                    </button>
                   </div>
 
                   <div className="space-y-3 mb-4">

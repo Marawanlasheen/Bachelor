@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .bank import (
 	_ensure_session_progress,
@@ -15,8 +17,18 @@ from .bank import (
 )
 from .commands import _autograde_current_submission, _handle_local_commands
 from .compiler import compile_and_run_java
+from .db import (
+	authenticate_user,
+	create_access_token,
+	create_user,
+	decode_access_token,
+	get_user_by_session_id,
+	init_db,
+)
 from .llm import _run_chat_turn, _run_groq_only
 from .schemas import (
+	AuthResponse,
+	AuthUser,
 	BankItemPublic,
 	ChatRequest,
 	ChatResponse,
@@ -24,9 +36,11 @@ from .schemas import (
 	CompareResponse,
 	JavaCompileRequest,
 	JavaCompileResponse,
+	LoginRequest,
 	ModelResult,
 	ResetSessionRequest,
 	SetCurrentRequest,
+	SignupRequest,
 )
 from . import state
 from .state import BANK_LOCK, CHAT_SESSIONS, POLICY_TEXT, PROGRESS_BY_SESSION
@@ -36,6 +50,7 @@ from .web import home
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+	init_db()
 	with BANK_LOCK:
 		_load_problem_bank()
 		_load_progress_store()
@@ -43,6 +58,24 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Hint-First", version="0.1.0", lifespan=_lifespan)
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict[str, Any]:
+	if credentials is None or not credentials.credentials:
+		raise HTTPException(status_code=401, detail="Authentication required")
+	try:
+		payload = decode_access_token(credentials.credentials)
+	except Exception:
+		raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+	session_id = str(payload.get("sid", "")).strip()
+	if not session_id:
+		raise HTTPException(status_code=401, detail="Invalid token payload")
+	user = get_user_by_session_id(session_id)
+	if not user:
+		raise HTTPException(status_code=401, detail="User not found")
+	return user
 
 
 # Dev-friendly CORS for the React (Vite) frontend.
@@ -50,9 +83,11 @@ _DEV_ALLOWED_ORIGINS = [
 	"http://localhost:5173",
 	"http://127.0.0.1:5173",
 ]
+_cors_from_env = [s.strip() for s in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if s.strip()]
+_allowed_origins = _cors_from_env if _cors_from_env else _DEV_ALLOWED_ORIGINS
 app.add_middleware(
 	CORSMiddleware,
-	allow_origins=_DEV_ALLOWED_ORIGINS,
+	allow_origins=_allowed_origins,
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
@@ -81,11 +116,60 @@ def list_bank_items() -> list[BankItemPublic]:
 		]
 
 
-@app.post("/tracker/current")
-def tracker_set_current(payload: SetCurrentRequest) -> dict[str, Any]:
+@app.post("/auth/signup", response_model=AuthResponse)
+def auth_signup(payload: SignupRequest) -> AuthResponse:
+	user = create_user(payload.email, payload.password)
+	if user is None:
+		raise HTTPException(status_code=409, detail="Email is already registered")
 	with BANK_LOCK:
-		_ensure_session_progress(payload.session_id)
-		progress = PROGRESS_BY_SESSION.get(payload.session_id)
+		_ensure_session_progress(user["session_id"])
+		progress = _progress_summary(user["session_id"])
+	token = create_access_token(user)
+	return AuthResponse(
+		access_token=token,
+		token_type="bearer",
+		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		progress=progress,
+	)
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+def auth_login(payload: LoginRequest) -> AuthResponse:
+	user = authenticate_user(payload.email, payload.password)
+	if user is None:
+		raise HTTPException(status_code=401, detail="Invalid email or password")
+	with BANK_LOCK:
+		_ensure_session_progress(user["session_id"])
+		progress = _progress_summary(user["session_id"])
+	token = create_access_token(user)
+	return AuthResponse(
+		access_token=token,
+		token_type="bearer",
+		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		progress=progress,
+	)
+
+
+@app.get("/auth/me", response_model=AuthResponse)
+def auth_me(user: dict[str, Any] = Depends(_require_user)) -> AuthResponse:
+	with BANK_LOCK:
+		_ensure_session_progress(user["session_id"])
+		progress = _progress_summary(user["session_id"])
+	token = create_access_token(user)
+	return AuthResponse(
+		access_token=token,
+		token_type="bearer",
+		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		progress=progress,
+	)
+
+
+@app.post("/tracker/current")
+def tracker_set_current(payload: SetCurrentRequest, user: dict[str, Any] = Depends(_require_user)) -> dict[str, Any]:
+	session_id = user["session_id"]
+	with BANK_LOCK:
+		_ensure_session_progress(session_id)
+		progress = PROGRESS_BY_SESSION.get(session_id)
 		if not progress:
 			raise HTTPException(status_code=404, detail="No progress for session")
 		problem = next(
@@ -100,8 +184,8 @@ def tracker_set_current(payload: SetCurrentRequest) -> dict[str, Any]:
 		_save_progress_store()
 		return {
 			"status": "ok",
-			"session_id": payload.session_id,
-			"progress": _progress_summary(payload.session_id),
+			"session_id": session_id,
+			"progress": _progress_summary(session_id),
 		}
 
 
@@ -129,7 +213,8 @@ async def compare_models(payload: CompareRequest) -> CompareResponse:
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
+async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_require_user)) -> ChatResponse:
+	session_id = user["session_id"]
 	if (
 		not payload.message.strip()
 		and not payload.question.strip()
@@ -140,8 +225,8 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 	# If the student submits code, remember it as a submission for the current question.
 	if payload.student_code.strip():
 		with BANK_LOCK:
-			_ensure_session_progress(payload.session_id)
-			state = PROGRESS_BY_SESSION.get(payload.session_id)
+			_ensure_session_progress(session_id)
+			state = PROGRESS_BY_SESSION.get(session_id)
 			if state and state.current_item_id:
 				state.last_submission_item_id = state.current_item_id
 				state.last_submission_ms = _now_ms()
@@ -153,12 +238,12 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 	# Including payload.question here causes false positives like matching
 	# "Exercise 3-8" from the prompt itself.
 	local_text = payload.message.strip()
-	local_result, progress = _handle_local_commands(payload.session_id, local_text)
+	local_result, progress = _handle_local_commands(session_id, local_text)
 	if local_result is not None:
 		raw_result = local_result.model_dump()
 		return ChatResponse(
 			policy=POLICY_TEXT,
-			session_id=payload.session_id,
+			session_id=session_id,
 			result=ModelResult(**raw_result),
 			progress=progress,
 		)
@@ -166,7 +251,7 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 	# Autograde: if they submitted an answer for the current exercise and it's correct,
 	# confirm + mark solved immediately.
 	graded = await _autograde_current_submission(
-		session_id=payload.session_id,
+		session_id=session_id,
 		message=payload.message,
 		student_code=payload.student_code,
 	)
@@ -174,15 +259,15 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 		correct, feedback, item_id = graded
 		if correct:
 			with BANK_LOCK:
-				_ensure_session_progress(payload.session_id)
-				_mark_solved(payload.session_id, item_id)
-				progress = _progress_summary(payload.session_id)
+				_ensure_session_progress(session_id)
+				_mark_solved(session_id, item_id)
+				progress = _progress_summary(session_id)
 			text = f"Correct — marked {item_id} as solved."
 			if feedback and feedback.lower() not in {"correct.", "correct"}:
 				text = f"Correct — marked {item_id} as solved. {feedback}"
 			return ChatResponse(
 				policy=POLICY_TEXT,
-				session_id=payload.session_id,
+				session_id=session_id,
 				result=ModelResult(
 					provider="local",
 					model="autograder",
@@ -196,10 +281,10 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 			)
 
 	with BANK_LOCK:
-		_ensure_session_progress(payload.session_id)
-		progress = _progress_summary(payload.session_id)
+		_ensure_session_progress(session_id)
+		progress = _progress_summary(session_id)
 	raw_result = await _run_chat_turn(
-		session_id=payload.session_id,
+		session_id=session_id,
 		message=payload.message,
 		question=payload.question,
 		student_code=payload.student_code,
@@ -208,7 +293,7 @@ async def chat_with_tutor(payload: ChatRequest) -> ChatResponse:
 
 	return ChatResponse(
 		policy=POLICY_TEXT,
-		session_id=payload.session_id,
+		session_id=session_id,
 		result=ModelResult(**raw_result),
 		progress=progress,
 	)
@@ -221,20 +306,23 @@ async def compile_java(payload: JavaCompileRequest) -> JavaCompileResponse:
 
 
 @app.post("/chat/reset")
-def reset_chat_session(payload: ResetSessionRequest) -> dict[str, str]:
-	CHAT_SESSIONS.pop(payload.session_id, None)
+def reset_chat_session(payload: ResetSessionRequest, user: dict[str, Any] = Depends(_require_user)) -> dict[str, str]:
+	session_id = user["session_id"]
+	CHAT_SESSIONS.pop(session_id, None)
 	if not payload.keep_progress:
 		with BANK_LOCK:
-			PROGRESS_BY_SESSION.pop(payload.session_id, None)
+			PROGRESS_BY_SESSION.pop(session_id, None)
 			_save_progress_store()
-	return {"status": "ok", "session_id": payload.session_id}
+	return {"status": "ok", "session_id": session_id}
 
 
 @app.get("/tracker/status")
-def tracker_status(session_id: str) -> dict[str, Any]:
+def tracker_status(session_id: str, user: dict[str, Any] = Depends(_require_user)) -> dict[str, Any]:
+	_ = session_id
+	actual_session_id = user["session_id"]
 	with BANK_LOCK:
-		_ensure_session_progress(session_id)
-		progress = _progress_summary(session_id)
+		_ensure_session_progress(actual_session_id)
+		progress = _progress_summary(actual_session_id)
 		if progress is None:
 			raise HTTPException(status_code=404, detail="No progress for session")
-		return {"status": "ok", "session_id": session_id, "progress": progress}
+		return {"status": "ok", "session_id": actual_session_id, "progress": progress}

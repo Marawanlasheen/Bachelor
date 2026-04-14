@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
-import { LecturesList } from './components/LecturesList';
 import { AssignmentsList } from './components/AssignmentsList';
 import { AssignmentView } from './components/AssignmentView';
-import { mockLectures } from './data/mockData';
-import { Lecture, Assignment, ChatMessage } from './types';
-import { getOrCreateSessionId } from './api/session';
+import { Assignment, ChatConversation, ChatMessage } from './types';
+import { clearStoredAuth, getStoredAuth, saveStoredAuth, StoredAuth } from './api/session';
+import { login, me, signup } from './api/auth';
 import { chat, getTrackerStatus, listBankItems, setCurrentItem } from './api/tutorApi';
 
-type View = 'chat' | 'lectures' | 'assignments' | 'assignment-detail';
+type View = 'chat' | 'assignments' | 'assignment-detail';
 
 function shortDescription(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
@@ -28,15 +27,26 @@ function parseItemId(itemId: string): { pa: number; q: number } | null {
   return { pa: Number(m[1]), q: Number(m[2]) };
 }
 
+function chatConversationsKey(sessionId: string): string {
+  return `chat_conversations_${sessionId}`;
+}
+
 export default function App() {
-  const [sessionId] = useState<string>(() => getOrCreateSessionId());
+  const [auth, setAuth] = useState<StoredAuth | null>(() => getStoredAuth());
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState('');
   const [activeView, setActiveView] = useState<View>('chat');
-  const [lectures, setLectures] = useState<Lecture[]>(mockLectures);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  const sessionId = auth?.sessionId ?? '';
 
   useEffect(() => {
     if (darkMode) {
@@ -47,6 +57,33 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => {
+    if (!auth?.token) return;
+
+    const hydrate = async () => {
+      try {
+        const res = await me(auth.token);
+        const refreshed: StoredAuth = {
+          token: res.access_token,
+          email: res.user.email,
+          sessionId: res.user.session_id,
+        };
+        saveStoredAuth(refreshed);
+        setAuth(refreshed);
+      } catch {
+        clearStoredAuth();
+        setAuth(null);
+      }
+    };
+
+    void hydrate();
+  }, []);
+
+  useEffect(() => {
+    if (!auth) {
+      setAssignments([]);
+      return;
+    }
+
     const load = async () => {
       try {
         const items = await listBankItems();
@@ -113,26 +150,101 @@ export default function App() {
     };
 
     void load();
+  }, [sessionId, auth]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setChatConversations([]);
+      setActiveChatId(null);
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(chatConversationsKey(sessionId));
+      if (!raw) {
+        setChatConversations([]);
+        setActiveChatId(null);
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as ChatConversation[];
+      if (Array.isArray(parsed)) {
+        const sorted = parsed.sort((a, b) => b.updatedAt - a.updatedAt);
+        setChatConversations(sorted);
+        setActiveChatId(sorted[0]?.id ?? null);
+      } else {
+        setChatConversations([]);
+        setActiveChatId(null);
+      }
+    } catch {
+      setChatConversations([]);
+      setActiveChatId(null);
+    }
   }, [sessionId]);
 
-  const handleViewChange = (view: 'chat' | 'lectures' | 'assignments') => {
+  useEffect(() => {
+    if (!sessionId) return;
+    localStorage.setItem(chatConversationsKey(sessionId), JSON.stringify(chatConversations));
+  }, [sessionId, chatConversations]);
+
+  const handleAuthSubmit = async () => {
+    setAuthError('');
+    const email = emailInput.trim();
+    const password = passwordInput;
+    if (!email || !password) {
+      setAuthError('Email and password are required.');
+      return;
+    }
+
+    try {
+      const res = authMode === 'signup' ? await signup(email, password) : await login(email, password);
+      const nextAuth: StoredAuth = {
+        token: res.access_token,
+        email: res.user.email,
+        sessionId: res.user.session_id,
+      };
+      saveStoredAuth(nextAuth);
+      setAuth(nextAuth);
+      setPasswordInput('');
+      setAuthError('');
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : 'Authentication failed');
+    }
+  };
+
+  const handleLogout = () => {
+    clearStoredAuth();
+    setAuth(null);
+    setSelectedAssignmentId(null);
+    setSelectedQuestionId(null);
+    setAssignments([]);
+    setChatConversations([]);
+    setActiveChatId(null);
+    setActiveView('chat');
+  };
+
+  const handleViewChange = (view: 'chat' | 'assignments') => {
     setActiveView(view);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
   };
 
-  const handleLectureClick = (_id: string) => {
-    // Lectures are no longer clickable to open
+  const handleChatConversationsChange = (nextConversations: ChatConversation[], nextActiveId: string | null) => {
+    const sorted = [...nextConversations].sort((a, b) => b.updatedAt - a.updatedAt);
+    setChatConversations(sorted);
+    setActiveChatId(nextActiveId);
   };
 
-  const handleMarkLectureComplete = (id: string) => {
-    setLectures((prev) =>
-      prev.map((lecture) =>
-        lecture.id === id
-          ? { ...lecture, completed: !lecture.completed, progress: lecture.completed ? 0 : 100 }
-          : lecture
-      )
-    );
+  const handleNewChat = () => {
+    setActiveView('chat');
+    setActiveChatId(null);
+  };
+
+  const handleOpenRecentChat = (conversationId: string) => {
+    setActiveView('chat');
+    setActiveChatId(conversationId);
+    setSelectedAssignmentId(null);
+    setSelectedQuestionId(null);
   };
 
   const handleAssignmentClick = (id: string) => {
@@ -239,6 +351,53 @@ export default function App() {
 
   const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId);
 
+  if (!auth) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background p-6">
+        <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-4">
+          <h1 className="text-xl">Student Login</h1>
+
+          <div className="space-y-2">
+            <label className="text-sm">Email</label>
+            <input
+              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="student@example.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm">Password</label>
+            <input
+              type="password"
+              className="w-full rounded-md border border-border bg-background px-3 py-2"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              placeholder="At least 6 characters"
+            />
+          </div>
+
+          {authError ? <p className="text-sm text-red-500">{authError}</p> : null}
+
+          <button
+            onClick={() => void handleAuthSubmit()}
+            className="w-full rounded-md bg-primary text-primary-foreground py-2"
+          >
+            {authMode === 'signup' ? 'Create account' : 'Login'}
+          </button>
+
+          <button
+            onClick={() => setAuthMode((prev) => (prev === 'signup' ? 'login' : 'signup'))}
+            className="w-full text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+          >
+            {authMode === 'signup' ? 'Have an account? Login' : 'New student? Sign up'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex bg-background">
       <Sidebar
@@ -246,16 +405,24 @@ export default function App() {
         onViewChange={handleViewChange}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        recents={chatConversations}
+        activeRecentId={activeChatId}
+        onRecentClick={handleOpenRecentChat}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 overflow-hidden">
-        {activeView === 'chat' && <ChatView sessionId={sessionId} />}
+        <div className="border-b border-border px-4 py-2 flex items-center justify-between text-sm text-muted-foreground">
+          <span>{auth.email}</span>
+        </div>
 
-        {activeView === 'lectures' && (
-          <LecturesList
-            lectures={lectures}
-            onLectureClick={handleLectureClick}
-            onMarkComplete={handleMarkLectureComplete}
+        {activeView === 'chat' && (
+          <ChatView
+            sessionId={sessionId}
+            conversations={chatConversations}
+            activeConversationId={activeChatId}
+            onConversationsChange={handleChatConversationsChange}
+            onNewChat={handleNewChat}
           />
         )}
 

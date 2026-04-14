@@ -3,3 +3,7 @@ uvicorn[standard]
 python-dotenv
 langchain
 langchain-groq
+sqlalchemy
+psycopg2-binary
+PyJWT
+passlib

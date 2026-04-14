@@ -89,15 +89,7 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
         className="bg-card border-b border-border p-4 flex items-center justify-between"
       >
 		<h3>{editorTitle}</h3>
-		<div className="flex items-center gap-2 ml-3">
-          <button
-            onClick={handleRun}
-            disabled={isRunning || viewingSolution}
-            className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50 ml-2"
-          >
-            <Play className="w-4 h-4" />
-            <span className="text-sm">{isRunning ? 'Running...' : 'Run'}</span>
-          </button>
+        <div className="flex items-center gap-2 ml-3 w-full justify-end">
           <button
             onClick={handleSubmit}
             disabled={viewingSolution || isSubmitting}
@@ -105,6 +97,14 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
           >
             <Check className="w-4 h-4" />
             <span className="text-sm">{isSubmitting ? 'Submitting...' : 'Submit'}</span>
+          </button>
+          <button
+            onClick={handleRun}
+            disabled={isRunning || viewingSolution}
+            className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+          >
+            <Play className="w-4 h-4" />
+            <span className="text-sm">{isRunning ? 'Running...' : 'Run'}</span>
           </button>
         </div>
       </motion.div>

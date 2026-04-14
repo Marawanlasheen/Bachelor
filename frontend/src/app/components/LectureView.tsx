@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Clock, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Lecture } from '../types';
 
@@ -8,10 +8,6 @@ interface LectureViewProps {
 }
 
 export function LectureView({ lecture, onBack }: LectureViewProps) {
-  const handleDownloadPDF = () => {
-    console.log('Downloading PDF:', lecture.pdfUrl);
-  };
-
   return (
     <div className="h-full flex flex-col bg-background">
       <motion.div
@@ -36,13 +32,6 @@ export function LectureView({ lecture, onBack }: LectureViewProps) {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-all"
-          >
-            <Download className="w-4 h-4" />
-            Download PDF
-          </button>
         </div>
       </motion.div>
 

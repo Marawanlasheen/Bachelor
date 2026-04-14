@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, FileText, Download } from 'lucide-react';
+import { CheckCircle2, Circle, FileText } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Lecture } from '../types';
 
@@ -9,11 +9,6 @@ interface LecturesListProps {
 }
 
 export function LecturesList({ lectures, onLectureClick, onMarkComplete }: LecturesListProps) {
-  const handleDownloadPDF = (e: React.MouseEvent, pdfUrl: string) => {
-    e.stopPropagation();
-    console.log('Downloading PDF:', pdfUrl);
-  };
-
   const handleMarkComplete = (e: React.MouseEvent, lectureId: string) => {
     e.stopPropagation();
     if (onMarkComplete) {
@@ -69,13 +64,9 @@ export function LecturesList({ lectures, onLectureClick, onMarkComplete }: Lectu
               <p className="text-sm text-muted-foreground mb-4">{lecture.description}</p>
 
               <div className="space-y-3">
-                <button
-                  onClick={(e) => handleDownloadPDF(e, lecture.pdfUrl)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/70 text-sm rounded-lg transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Download PDF
-                </button>
+                <div className="w-full text-center px-3 py-2 bg-secondary/30 text-sm rounded-lg text-muted-foreground">
+                  Lecture materials are built into the platform
+                </div>
               </div>
             </motion.div>
           ))}

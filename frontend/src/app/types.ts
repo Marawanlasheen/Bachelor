@@ -39,6 +39,13 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface ChatConversation {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  updatedAt: number;
+}
+
 export interface Assignment {
   id: string;
   title: string;

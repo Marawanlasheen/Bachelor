@@ -1,17 +1,33 @@
-const SESSION_KEY = 'tutor_session_id';
+const AUTH_TOKEN_KEY = 'tutor_auth_token';
+const AUTH_SESSION_KEY = 'tutor_session_id';
+const AUTH_EMAIL_KEY = 'tutor_email';
 
-function fallbackSessionId(): string {
-  return `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+export interface StoredAuth {
+  token: string;
+  sessionId: string;
+  email: string;
 }
 
-export function getOrCreateSessionId(): string {
-  const existing = localStorage.getItem(SESSION_KEY);
-  if (existing && existing.trim()) return existing;
+export function getStoredAuth(): StoredAuth | null {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY) ?? '';
+  const sessionId = localStorage.getItem(AUTH_SESSION_KEY) ?? '';
+  const email = localStorage.getItem(AUTH_EMAIL_KEY) ?? '';
+  if (!token || !sessionId || !email) return null;
+  return { token, sessionId, email };
+}
 
-  const created = (globalThis.crypto && 'randomUUID' in globalThis.crypto)
-    ? (globalThis.crypto.randomUUID() as string)
-    : fallbackSessionId();
+export function saveStoredAuth(auth: StoredAuth): void {
+  localStorage.setItem(AUTH_TOKEN_KEY, auth.token);
+  localStorage.setItem(AUTH_SESSION_KEY, auth.sessionId);
+  localStorage.setItem(AUTH_EMAIL_KEY, auth.email);
+}
 
-  localStorage.setItem(SESSION_KEY, created);
-  return created;
+export function clearStoredAuth(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_SESSION_KEY);
+  localStorage.removeItem(AUTH_EMAIL_KEY);
+}
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
 }

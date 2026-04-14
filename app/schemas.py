@@ -91,3 +91,25 @@ class SessionProgress(BaseModel):
 	last_submission_item_id: str | None = None
 	last_submission_ms: int = 0
 	updated_at_ms: int = 0
+
+
+class SignupRequest(BaseModel):
+	email: str = Field(..., min_length=3)
+	password: str = Field(..., min_length=6)
+
+
+class LoginRequest(BaseModel):
+	email: str = Field(..., min_length=3)
+	password: str = Field(..., min_length=6)
+
+
+class AuthUser(BaseModel):
+	email: str
+	session_id: str
+
+
+class AuthResponse(BaseModel):
+	access_token: str
+	token_type: str = "bearer"
+	user: AuthUser
+	progress: dict[str, Any] | None = None

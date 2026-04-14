@@ -3,6 +3,7 @@ import re
 import time
 from typing import Any
 
+from .db import load_all_progress, load_progress, upsert_progress
 from .schemas import BankProblem, ProgressItem, SessionProgress
 from . import state
 
@@ -87,19 +88,8 @@ def _should_prefer_pdf_bank(current: list[BankProblem], from_pdfs: list[BankProb
 
 
 def _load_progress_store() -> None:
-	if not state.PROGRESS_PATH.exists():
-		return
 	try:
-		raw = json.loads(state.PROGRESS_PATH.read_text(encoding="utf-8"))
-		sessions_raw = raw.get("sessions") if isinstance(raw, dict) else None
-		if not isinstance(sessions_raw, dict):
-			return
-		loaded: dict[str, SessionProgress] = {}
-		for session_id, progress_raw in sessions_raw.items():
-			try:
-				loaded[str(session_id)] = SessionProgress(**progress_raw)
-			except Exception:
-				continue
+		loaded = load_all_progress()
 		state.PROGRESS_BY_SESSION.clear()
 		state.PROGRESS_BY_SESSION.update(loaded)
 	except Exception:
@@ -108,10 +98,8 @@ def _load_progress_store() -> None:
 
 def _save_progress_store() -> None:
 	try:
-		payload = {
-			"sessions": {sid: prog.model_dump() for sid, prog in state.PROGRESS_BY_SESSION.items()}
-		}
-		state.PROGRESS_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+		for sid, progress in state.PROGRESS_BY_SESSION.items():
+			upsert_progress(sid, progress)
 	except Exception:
 		return
 
@@ -155,6 +143,14 @@ def _ensure_session_progress(session_id: str) -> None:
 		if _sync_progress_with_bank(progress):
 			_save_progress_store()
 		return
+
+	loaded = load_progress(session_id)
+	if loaded is not None:
+		state.PROGRESS_BY_SESSION[session_id] = loaded
+		if _sync_progress_with_bank(loaded):
+			_save_progress_store()
+		return
+
 	items = [ProgressItem(item_id=p.item_id, title=p.title, solved=False) for p in state.PROBLEM_BANK]
 	state.PROGRESS_BY_SESSION[session_id] = SessionProgress(
 		items=items,

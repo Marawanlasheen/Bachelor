@@ -1,24 +1,46 @@
-import { BookOpen, FileText, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ChatConversation } from '../types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from './ui/alert-dialog';
 
 interface SidebarProps {
   activeView: string;
-  onViewChange: (view: 'chat' | 'lectures' | 'assignments') => void;
+  onViewChange: (view: 'chat' | 'assignments') => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  recents: ChatConversation[];
+  activeRecentId: string | null;
+  onRecentClick: (conversationId: string) => void;
+  onLogout: () => void;
 }
 
-export function Sidebar({ activeView, onViewChange, isCollapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({
+  activeView,
+  onViewChange,
+  isCollapsed,
+  onToggleCollapse,
+  recents,
+  activeRecentId,
+  onRecentClick,
+  onLogout,
+}: SidebarProps) {
   const menuItems = [
     { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
-    { id: 'lectures' as const, label: 'Lectures', icon: BookOpen },
     { id: 'assignments' as const, label: 'Assignments', icon: FileText },
   ];
 
-  const normalizedView = ['lecture-detail', 'assignment-detail'].includes(activeView)
-    ? activeView.includes('lecture')
-      ? 'lectures'
-      : 'assignments'
+  const normalizedView = ['assignment-detail'].includes(activeView)
+    ? 'assignments'
     : activeView;
 
   return (
@@ -36,7 +58,7 @@ export function Sidebar({ activeView, onViewChange, isCollapsed, onToggleCollaps
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="p-6 border-b border-border"
+            className="px-6 py-2.5 border-b border-border"
           >
       <h1 className="font-semibold text-primary">Your CodeBuddy</h1>
           </motion.div>
@@ -78,7 +100,82 @@ export function Sidebar({ activeView, onViewChange, isCollapsed, onToggleCollaps
             </motion.button>
           );
         })}
+
+        <AnimatePresence mode="wait">
+          {!isCollapsed && (
+            <motion.div
+              key="recents"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="mt-6"
+            >
+              <p className="px-2 pb-2 text-xs uppercase tracking-wide text-muted-foreground">Recents</p>
+              <div className="max-h-72 overflow-y-auto pr-1">
+                {recents.length === 0 ? (
+                  <p className="px-2 py-2 text-sm text-muted-foreground">No old chats yet</p>
+                ) : (
+                  recents.map((conversation) => {
+                    const isActiveRecent = activeRecentId === conversation.id && normalizedView === 'chat';
+
+                    return (
+                      <button
+                        key={conversation.id}
+                        onClick={() => onRecentClick(conversation.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors text-sm truncate ${
+                          isActiveRecent ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
+                        }`}
+                        title={conversation.title}
+                      >
+                        {conversation.title}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
+
+      <div className="p-4 border-t border-border">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-foreground hover:bg-secondary/50 transition-colors"
+              title={isCollapsed ? 'Logout' : undefined}
+            >
+              <LogOut className="w-5 h-5 flex-shrink-0" />
+              <AnimatePresence>
+                {!isCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="truncate"
+                  >
+                    Logout
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Logout?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to logout?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={onLogout}>Logout</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
       <button
         onClick={onToggleCollapse}

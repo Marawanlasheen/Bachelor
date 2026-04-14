@@ -1,3 +1,11 @@
+import { getAuthToken } from './session';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+
+function apiUrl(path: string): string {
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
+
 export interface TutorModelResult {
   provider: string;
   model: string;
@@ -47,6 +55,14 @@ async function parseJsonOrThrow(response: Response) {
   }
 }
 
+function authHeader(): Record<string, string> {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Please login first');
+  }
+  return { Authorization: `Bearer ${token}` };
+}
+
 export async function chat(params: {
   sessionId: string;
   message?: string;
@@ -62,9 +78,9 @@ export async function chat(params: {
     temperature: params.temperature ?? 0.2,
   };
 
-  const response = await fetch('/chat', {
+  const response = await fetch(apiUrl('/chat'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify(payload),
   });
 
@@ -78,7 +94,9 @@ export async function chat(params: {
 }
 
 export async function getTrackerStatus(sessionId: string): Promise<{ progress: TutorProgressSummary }> {
-  const response = await fetch(`/tracker/status?session_id=${encodeURIComponent(sessionId)}`);
+  const response = await fetch(apiUrl(`/tracker/status?session_id=${encodeURIComponent(sessionId)}`), {
+    headers: { ...authHeader() },
+  });
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
@@ -88,9 +106,9 @@ export async function getTrackerStatus(sessionId: string): Promise<{ progress: T
 }
 
 export async function setCurrentItem(params: { sessionId: string; itemId: string }): Promise<{ progress: TutorProgressSummary }>{
-  const response = await fetch('/tracker/current', {
+  const response = await fetch(apiUrl('/tracker/current'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
     body: JSON.stringify({ session_id: params.sessionId, item_id: params.itemId }),
   });
   if (!response.ok) {
@@ -102,7 +120,7 @@ export async function setCurrentItem(params: { sessionId: string; itemId: string
 }
 
 export async function listBankItems(): Promise<BankItemPublic[]> {
-  const response = await fetch('/bank/items');
+  const response = await fetch(apiUrl('/bank/items'));
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -113,7 +131,7 @@ export async function compileJava(params: {
   code: string;
   timeoutSec?: number;
 }): Promise<JavaCompileResponse> {
-  const response = await fetch('/compile/java', {
+  const response = await fetch(apiUrl('/compile/java'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

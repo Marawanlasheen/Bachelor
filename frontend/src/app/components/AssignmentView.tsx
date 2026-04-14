@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, MessageCircle, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Eye, MessageCircle, X } from 'lucide-react';
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Resizable } from 're-resizable';
@@ -36,10 +36,6 @@ export function AssignmentView({
   const selectedQuestion = assignment.questions.find(q => q.id === selectedQuestionId);
 
   const codingTitle = selectedQuestion ? `Coding Challenge ${selectedQuestion.id}` : 'Coding Challenge';
-
-  const handleDownload = () => {
-    console.log('Downloading PDF for:', assignment.pdfUrl);
-  };
 
   const handleViewSolutionClick = () => {
     if (!viewingSolution) {
@@ -91,13 +87,6 @@ export function AssignmentView({
                 {assignment.questions.filter(q => q.solved).length}/{assignment.questions.length} problems completed
               </p>
             </div>
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-secondary/50 transition-colors"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download PDF</span>
-            </button>
           </div>
         </motion.div>
 
