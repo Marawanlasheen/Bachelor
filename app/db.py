@@ -7,8 +7,13 @@ from typing import Any
 import jwt
 from passlib.context import CryptContext
 from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, create_engine, insert, select, update
+from dotenv import load_dotenv
 
 from .schemas import SessionProgress
+
+
+# Ensure DATABASE_URL from .env is available before engine is created.
+load_dotenv()
 
 
 def _now_ms() -> int:
