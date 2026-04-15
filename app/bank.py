@@ -1,9 +1,8 @@
-import json
 import re
 import time
 from typing import Any
 
-from .db import load_all_progress, load_progress, upsert_progress
+from .db import load_all_progress, load_problem_bank as load_problem_bank_db, load_progress, upsert_progress
 from .schemas import BankProblem, ProgressItem, SessionProgress
 from . import state
 
@@ -13,78 +12,10 @@ def _now_ms() -> int:
 
 
 def _load_problem_bank() -> None:
-	if not state.BANK_PATH.exists():
-		state.PROBLEM_BANK = _build_problem_bank_from_pas_dir()
-		if state.PROBLEM_BANK:
-			_try_write_problem_bank(state.PROBLEM_BANK)
-		return
 	try:
-		raw = json.loads(state.BANK_PATH.read_text(encoding="utf-8"))
-		if not isinstance(raw, list):
-			state.PROBLEM_BANK = []
-			return
-		problems: list[BankProblem] = []
-		for item in raw:
-			try:
-				problems.append(BankProblem(**item))
-			except Exception:
-				continue
-		# If new PA PDFs were added but json is stale, rebuild from PDFs automatically.
-		pdf_built = _build_problem_bank_from_pas_dir()
-		if _should_prefer_pdf_bank(problems, pdf_built):
-			state.PROBLEM_BANK = pdf_built
-			_try_write_problem_bank(pdf_built)
-		else:
-			state.PROBLEM_BANK = problems
+		state.PROBLEM_BANK = load_problem_bank_db()
 	except Exception:
-		state.PROBLEM_BANK = _build_problem_bank_from_pas_dir()
-
-
-def _try_write_problem_bank(problems: list[BankProblem]) -> None:
-	try:
-		raw = [p.model_dump() for p in problems]
-		state.BANK_PATH.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
-	except Exception:
-		return
-
-
-def _build_problem_bank_from_pas_dir() -> list[BankProblem]:
-	try:
-		from extract_pa1_to_json import build_problem_bank_from_pas_dir
-	except Exception:
-		return []
-
-	try:
-		rows = build_problem_bank_from_pas_dir()
-		problems: list[BankProblem] = []
-		for item in rows:
-			try:
-				problems.append(BankProblem(**item))
-			except Exception:
-				continue
-		return problems
-	except Exception:
-		return []
-
-
-def _item_pa_number(item_id: str) -> int | None:
-	m = re.fullmatch(r"(?i)E\s*(\d+)\s*[-.]\s*(\d+)", item_id.strip())
-	if not m:
-		return None
-	return int(m.group(1))
-
-
-def _should_prefer_pdf_bank(current: list[BankProblem], from_pdfs: list[BankProblem]) -> bool:
-	if not from_pdfs:
-		return False
-	if not current:
-		return True
-	current_pas = {n for p in current if (n := _item_pa_number(p.item_id)) is not None}
-	pdf_pas = {n for p in from_pdfs if (n := _item_pa_number(p.item_id)) is not None}
-	# Prefer PDF rebuild if it includes PA numbers missing from existing json.
-	if not pdf_pas.issubset(current_pas):
-		return True
-	return False
+		state.PROBLEM_BANK = []
 
 
 def _load_progress_store() -> None:

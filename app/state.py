@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 from threading import Lock
 
 from dotenv import load_dotenv
@@ -25,7 +23,6 @@ POLICY_TEXT = (
 MAX_HISTORY_MESSAGES = 24
 CHAT_SESSIONS: dict[str, list[dict[str, str]]] = {}
 
-BANK_PATH = Path(os.getenv("PAS_BANK_PATH", "pas_bank.local.json"))
 BANK_LOCK = Lock()
 
 PROBLEM_BANK: list[BankProblem] = []

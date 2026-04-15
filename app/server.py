@@ -21,6 +21,7 @@ from .db import (
 	authenticate_user,
 	create_access_token,
 	create_user,
+	delete_chat_messages,
 	decode_access_token,
 	get_user_by_session_id,
 	init_db,
@@ -309,6 +310,10 @@ async def compile_java(payload: JavaCompileRequest) -> JavaCompileResponse:
 def reset_chat_session(payload: ResetSessionRequest, user: dict[str, Any] = Depends(_require_user)) -> dict[str, str]:
 	session_id = user["session_id"]
 	CHAT_SESSIONS.pop(session_id, None)
+	try:
+		delete_chat_messages(session_id)
+	except Exception:
+		pass
 	if not payload.keep_progress:
 		with BANK_LOCK:
 			PROGRESS_BY_SESSION.pop(session_id, None)

@@ -171,7 +171,7 @@ export default function App() {
       if (Array.isArray(parsed)) {
         const sorted = parsed.sort((a, b) => b.updatedAt - a.updatedAt);
         setChatConversations(sorted);
-        setActiveChatId(sorted[0]?.id ?? null);
+        setActiveChatId(null);
       } else {
         setChatConversations([]);
         setActiveChatId(null);

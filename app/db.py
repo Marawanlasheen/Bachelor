@@ -5,11 +5,11 @@ import uuid
 from typing import Any
 
 import jwt
-from passlib.context import CryptContext
-from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, create_engine, insert, select, update
 from dotenv import load_dotenv
+from passlib.context import CryptContext
+from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, create_engine, delete, insert, select, update
 
-from .schemas import SessionProgress
+from .schemas import BankProblem, SessionProgress
 
 
 # Ensure DATABASE_URL from .env is available before engine is created.
@@ -56,6 +56,27 @@ progress_sessions_table = Table(
 	Column("session_id", String(64), primary_key=True),
 	Column("progress_json", Text, nullable=False),
 	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+pas_items_table = Table(
+	"pas_items",
+	metadata,
+	Column("item_id", String(64), primary_key=True),
+	Column("position", Integer, nullable=False),
+	Column("title", Text, nullable=False),
+	Column("prompt", Text, nullable=False),
+	Column("solution_text", Text, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+chat_messages_table = Table(
+	"chat_messages",
+	metadata,
+	Column("id", Integer, primary_key=True, autoincrement=True),
+	Column("session_id", String(64), nullable=False),
+	Column("role", String(16), nullable=False),
+	Column("content", Text, nullable=False),
+	Column("created_at_ms", BigInteger, nullable=False),
 )
 
 
@@ -194,3 +215,89 @@ def upsert_progress(session_id: str, progress: SessionProgress) -> None:
 					updated_at_ms=now_ms,
 				)
 			)
+
+
+def load_problem_bank() -> list[BankProblem]:
+	loaded: list[BankProblem] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				pas_items_table.c.item_id,
+				pas_items_table.c.title,
+				pas_items_table.c.prompt,
+				pas_items_table.c.solution_text,
+			)
+			.order_by(pas_items_table.c.position.asc(), pas_items_table.c.item_id.asc())
+		).fetchall()
+	for row in rows:
+		m = row._mapping
+		try:
+			loaded.append(
+				BankProblem(
+					item_id=str(m["item_id"]),
+					title=str(m["title"]),
+					prompt=str(m["prompt"]),
+					solution_text=str(m["solution_text"]),
+				)
+			)
+		except Exception:
+			continue
+	return loaded
+
+
+def replace_problem_bank(problems: list[BankProblem]) -> None:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		conn.execute(delete(pas_items_table))
+		for idx, p in enumerate(problems, start=1):
+			conn.execute(
+				insert(pas_items_table).values(
+					item_id=p.item_id,
+					position=idx,
+					title=p.title,
+					prompt=p.prompt,
+					solution_text=p.solution_text,
+					updated_at_ms=now_ms,
+				)
+			)
+
+
+def load_chat_messages(session_id: str, limit: int = 100) -> list[dict[str, str]]:
+	messages: list[dict[str, str]] = []
+	with engine.begin() as conn:
+		query = (
+			select(chat_messages_table.c.role, chat_messages_table.c.content)
+			.where(chat_messages_table.c.session_id == session_id)
+			.order_by(chat_messages_table.c.id.desc())
+			.limit(max(limit, 1))
+		)
+		rows = conn.execute(query).fetchall()
+	for row in reversed(rows):
+		m = row._mapping
+		role = str(m.get("role", "")).strip().lower()
+		content = str(m.get("content", ""))
+		if role not in {"user", "assistant"} or not content:
+			continue
+		messages.append({"role": role, "content": content})
+	return messages
+
+
+def append_chat_message(session_id: str, role: str, content: str) -> None:
+	role_norm = role.strip().lower()
+	content_norm = content
+	if role_norm not in {"user", "assistant"} or not content_norm:
+		return
+	with engine.begin() as conn:
+		conn.execute(
+			insert(chat_messages_table).values(
+				session_id=session_id,
+				role=role_norm,
+				content=content_norm,
+				created_at_ms=_now_ms(),
+			)
+		)
+
+
+def delete_chat_messages(session_id: str) -> None:
+	with engine.begin() as conn:
+		conn.execute(delete(chat_messages_table).where(chat_messages_table.c.session_id == session_id))

@@ -5,6 +5,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
+from .db import append_chat_message, load_chat_messages
 from .schemas import ModelResult
 from .state import CHAT_SESSIONS, MAX_HISTORY_MESSAGES, POLICY_TEXT
 from .text_rules import (
@@ -103,7 +104,13 @@ async def _run_chat_turn(
 		}
 
 	user_prompt = _build_chat_prompt_with_progress(session_id, message, question, student_code)
-	history = CHAT_SESSIONS.setdefault(session_id, [])
+	history = CHAT_SESSIONS.get(session_id)
+	if history is None:
+		try:
+			history = load_chat_messages(session_id, limit=MAX_HISTORY_MESSAGES)
+		except Exception:
+			history = []
+		CHAT_SESSIONS[session_id] = history
 
 	start_time = time.perf_counter()
 	try:
@@ -123,6 +130,11 @@ async def _run_chat_turn(
 		history.append({"role": "user", "content": user_prompt})
 		history.append({"role": "assistant", "content": output_text})
 		_trim_history(history)
+		try:
+			append_chat_message(session_id, "user", user_prompt)
+			append_chat_message(session_id, "assistant", output_text)
+		except Exception:
+			pass
 
 		return {
 			"provider": "groq",
