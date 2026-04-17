@@ -31,6 +31,37 @@ function chatConversationsKey(sessionId: string): string {
   return `chat_conversations_${sessionId}`;
 }
 
+function questionDraftsKey(sessionId: string): string {
+  return `question_code_drafts_${sessionId}`;
+}
+
+function loadQuestionDrafts(sessionId: string): Record<string, string> {
+  if (!sessionId) return {};
+  try {
+    const raw = localStorage.getItem(questionDraftsKey(sessionId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveQuestionDraft(sessionId: string, questionId: string, code: string): void {
+  if (!sessionId || !questionId) return;
+  const drafts = loadQuestionDrafts(sessionId);
+  drafts[questionId] = code;
+  localStorage.setItem(questionDraftsKey(sessionId), JSON.stringify(drafts));
+}
+
+function clearQuestionDraft(sessionId: string, questionId: string): void {
+  if (!sessionId || !questionId) return;
+  const drafts = loadQuestionDrafts(sessionId);
+  if (!(questionId in drafts)) return;
+  delete drafts[questionId];
+  localStorage.setItem(questionDraftsKey(sessionId), JSON.stringify(drafts));
+}
+
 export default function App() {
   const [auth, setAuth] = useState<StoredAuth | null>(() => getStoredAuth());
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
@@ -47,6 +78,78 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   const sessionId = auth?.sessionId ?? '';
+
+  const reloadAssignments = async () => {
+    if (!auth || !sessionId) {
+      setAssignments([]);
+      return;
+    }
+
+    try {
+      const items = await listBankItems();
+      let solvedIds: string[] = [];
+      try {
+        const status = await getTrackerStatus(sessionId);
+        solvedIds = status.progress?.solved_ids ?? [];
+      } catch {
+        solvedIds = [];
+      }
+
+      const drafts = loadQuestionDrafts(sessionId);
+
+      const questions = items.map((it) => ({
+        id: it.item_id,
+        title: it.title,
+        description: shortDescription(it.prompt),
+        prompt: it.prompt,
+        difficulty: 'Easy' as const,
+        solved: solvedIds.includes(it.item_id),
+        starterCode: '',
+        currentCode: drafts[it.item_id] ?? '',
+        chatHistory: [],
+      }));
+
+      const grouped = new Map<number, Assignment>();
+      for (const q of questions) {
+        const parsed = parseItemId(q.id);
+        const paNumber = parsed?.pa ?? 1;
+        const existing = grouped.get(paNumber);
+        if (!existing) {
+          grouped.set(paNumber, {
+            id: `pa${paNumber}`,
+            title: `PA${paNumber}`,
+            description: `Practice Assignment ${paNumber}`,
+            dueDate: '',
+            progress: 0,
+            questions: [q],
+            pdfUrl: '',
+          });
+        } else {
+          existing.questions.push(q);
+        }
+      }
+
+      const sortedAssignments = Array.from(grouped.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, assignment]) => {
+          assignment.questions.sort((a, b) => {
+            const aParsed = parseItemId(a.id);
+            const bParsed = parseItemId(b.id);
+            if (!aParsed || !bParsed) return a.id.localeCompare(b.id);
+            return aParsed.q - bParsed.q;
+          });
+          const solvedCount = assignment.questions.filter((q) => q.solved).length;
+          return {
+            ...assignment,
+            progress: computeProgressPercent(solvedCount, assignment.questions.length),
+          };
+        });
+
+      setAssignments(sortedAssignments);
+    } catch {
+      setAssignments([]);
+    }
+  };
 
   useEffect(() => {
     if (darkMode) {
@@ -84,72 +187,7 @@ export default function App() {
       return;
     }
 
-    const load = async () => {
-      try {
-        const items = await listBankItems();
-        let solvedIds: string[] = [];
-        try {
-          const status = await getTrackerStatus(sessionId);
-          solvedIds = status.progress?.solved_ids ?? [];
-        } catch {
-          solvedIds = [];
-        }
-
-        const questions = items.map((it) => ({
-          id: it.item_id,
-          title: it.title,
-          description: shortDescription(it.prompt),
-          prompt: it.prompt,
-          difficulty: 'Easy' as const,
-          solved: solvedIds.includes(it.item_id),
-          starterCode: '',
-          currentCode: '',
-          chatHistory: [],
-        }));
-
-        const grouped = new Map<number, Assignment>();
-        for (const q of questions) {
-          const parsed = parseItemId(q.id);
-          const paNumber = parsed?.pa ?? 1;
-          const existing = grouped.get(paNumber);
-          if (!existing) {
-            grouped.set(paNumber, {
-              id: `pa${paNumber}`,
-              title: `PA${paNumber}`,
-              description: `Practice Assignment ${paNumber}`,
-              dueDate: '',
-              progress: 0,
-              questions: [q],
-              pdfUrl: '',
-            });
-          } else {
-            existing.questions.push(q);
-          }
-        }
-
-        const sortedAssignments = Array.from(grouped.entries())
-          .sort((a, b) => a[0] - b[0])
-          .map(([, assignment]) => {
-            assignment.questions.sort((a, b) => {
-              const aParsed = parseItemId(a.id);
-              const bParsed = parseItemId(b.id);
-              if (!aParsed || !bParsed) return a.id.localeCompare(b.id);
-              return aParsed.q - bParsed.q;
-            });
-            const solvedCount = assignment.questions.filter((q) => q.solved).length;
-            return {
-              ...assignment,
-              progress: computeProgressPercent(solvedCount, assignment.questions.length),
-            };
-          });
-
-        setAssignments(sortedAssignments);
-      } catch {
-        setAssignments([]);
-      }
-    };
-
-    void load();
+    void reloadAssignments();
   }, [sessionId, auth]);
 
   useEffect(() => {
@@ -227,6 +265,9 @@ export default function App() {
     setActiveView(view);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
+    if (view === 'assignments') {
+      void reloadAssignments();
+    }
   };
 
   const handleChatConversationsChange = (nextConversations: ChatConversation[], nextActiveId: string | null) => {
@@ -257,6 +298,8 @@ export default function App() {
 
     if (questionId) {
       void setCurrentItem({ sessionId, itemId: questionId }).catch(() => undefined);
+    } else {
+      void reloadAssignments();
     }
   };
 
@@ -266,6 +309,7 @@ export default function App() {
 
     try {
       await setCurrentItem({ sessionId, itemId: questionId });
+      saveQuestionDraft(sessionId, questionId, code);
       const res = await chat({
         sessionId,
         message: 'Here is my code submission.',
@@ -295,6 +339,7 @@ export default function App() {
   };
 
   const handleQuestionReset = (questionId: string) => {
+    clearQuestionDraft(sessionId, questionId);
     setAssignments((prev) =>
       prev.map((assignment) => {
         if (assignment.id !== selectedAssignmentId) return assignment;
@@ -333,6 +378,7 @@ export default function App() {
   };
 
   const handleCodeChange = (questionId: string, code: string) => {
+    saveQuestionDraft(sessionId, questionId, code);
     setAssignments((prev) =>
       prev.map((assignment) => {
         if (assignment.id !== selectedAssignmentId) return assignment;
@@ -434,7 +480,10 @@ export default function App() {
           <AssignmentView
             assignment={selectedAssignment}
             sessionId={sessionId}
-            onBack={() => setActiveView('assignments')}
+            onBack={() => {
+              setActiveView('assignments');
+              void reloadAssignments();
+            }}
             onQuestionSelect={handleQuestionSelect}
             onSolutionSubmit={handleSolutionSubmit}
             onCodeChange={handleCodeChange}

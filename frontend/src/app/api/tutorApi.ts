@@ -14,6 +14,9 @@ export interface TutorModelResult {
   direct_answer_risk: boolean;
   direct_answer_reason: string;
   error?: string | null;
+  error_category?: 'syntax' | 'runtime' | 'logical' | string | null;
+  highlighted_lines?: number[];
+  diagnostic_summary?: string | null;
 }
 
 export interface TutorProgressSummary {
@@ -44,6 +47,9 @@ export interface JavaCompileResponse {
   stdout: string;
   stderr: string;
   exit_code: number | null;
+  error_category?: 'syntax' | 'runtime' | 'logical' | string | null;
+  highlighted_lines?: number[];
+  diagnostic_summary?: string | null;
 }
 
 async function parseJsonOrThrow(response: Response) {

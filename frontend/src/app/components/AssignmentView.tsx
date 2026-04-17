@@ -1,8 +1,9 @@
 import { ArrowLeft, CheckCircle2, Eye, MessageCircle, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Resizable } from 're-resizable';
 import { Assignment, ChatMessage } from '../types';
+import { TutorModelResult } from '../api/tutorApi';
 import { CodeEditor } from './CodeEditor';
 import { ChatPanel } from './ChatPanel';
 
@@ -33,7 +34,12 @@ export function AssignmentView({
   const [chatPanelOpen, setChatPanelOpen] = useState(true);
   const [chatPanelWidth, setChatPanelWidth] = useState(384);
   const [showSolutionDialog, setShowSolutionDialog] = useState(false);
+  const [highlightedLines, setHighlightedLines] = useState<number[]>([]);
   const selectedQuestion = assignment.questions.find(q => q.id === selectedQuestionId);
+
+  useEffect(() => {
+    setHighlightedLines([]);
+  }, [selectedQuestionId]);
 
   const codingTitle = selectedQuestion ? `Coding Challenge ${selectedQuestion.id}` : 'Coding Challenge';
 
@@ -60,7 +66,18 @@ export function AssignmentView({
     if (selectedQuestion && window.confirm('Reset this question? Your code will be cleared and you can start fresh.')) {
       onQuestionReset(selectedQuestion.id);
       setViewingSolution(false);
+      setHighlightedLines([]);
     }
+  };
+
+  const handleTutorResult = (result: TutorModelResult) => {
+    setHighlightedLines(Array.isArray(result.highlighted_lines) ? result.highlighted_lines : []);
+  };
+
+  const handleCodeEdited = (editedLines: number[]) => {
+    if (!editedLines.length) return;
+    const editedSet = new Set(editedLines);
+    setHighlightedLines((prev) => prev.filter((line) => !editedSet.has(line)));
   };
 
   if (!selectedQuestion) {
@@ -298,6 +315,8 @@ export function AssignmentView({
               onSolutionSubmit={onSolutionSubmit}
               onCodeChange={onCodeChange}
               viewingSolution={viewingSolution}
+              highlightedLines={highlightedLines}
+              onCodeEdited={handleCodeEdited}
             />
           </motion.div>
         </div>
@@ -335,6 +354,7 @@ export function AssignmentView({
                 chatHistory={selectedQuestion.chatHistory || []}
                 viewingHistory={viewingSolution}
                 onClose={() => setChatPanelOpen(false)}
+                onTutorResult={handleTutorResult}
               />
             </motion.div>
           </Resizable>

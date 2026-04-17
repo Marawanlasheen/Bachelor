@@ -4,11 +4,42 @@ from .bank import _bank_prompt, _current_item, _ensure_session_progress
 from . import state
 
 
+MAX_QUESTION_CHARS = 900
+MAX_CODE_LINES = 80
+MAX_CODE_LINE_CHARS = 180
+
+
+def _clip_text(text: str, max_chars: int) -> str:
+	clean = text.strip()
+	if len(clean) <= max_chars:
+		return clean
+	return clean[:max_chars] + "\n...[truncated]"
+
+
 def _number_code_lines(student_code: str) -> str:
 	lines = student_code.strip("\n").splitlines()
 	if not lines:
 		return "(no code provided)"
-	return "\n".join(f"{index + 1:>3}: {line}" for index, line in enumerate(lines))
+
+	total = len(lines)
+	if total <= MAX_CODE_LINES:
+		selected = list(enumerate(lines, start=1))
+		omitted_msg = ""
+	else:
+		head_count = MAX_CODE_LINES // 2
+		tail_count = MAX_CODE_LINES - head_count
+		head = list(enumerate(lines[:head_count], start=1))
+		tail_start = total - tail_count + 1
+		tail = list(enumerate(lines[-tail_count:], start=tail_start))
+		selected = head + tail
+		omitted = total - MAX_CODE_LINES
+		omitted_msg = f"\n  ... ({omitted} middle lines omitted for brevity)"
+
+	formatted = "\n".join(
+		f"{line_no:>3}: {line[:MAX_CODE_LINE_CHARS]}"
+		for line_no, line in selected
+	)
+	return formatted + omitted_msg
 
 
 def _build_prompt(question: str, student_code: str) -> str:
@@ -31,7 +62,7 @@ def _build_chat_prompt(message: str, question: str, student_code: str) -> str:
 	if message.strip():
 		parts.append(f"Student Message:\n{message.strip()}")
 	if question.strip():
-		parts.append(f"Student Question:\n{question.strip()}")
+		parts.append(f"Student Question:\n{_clip_text(question, MAX_QUESTION_CHARS)}")
 	if student_code.strip():
 		parts.append(
 			"Student Code (read all lines before hinting):\n"

@@ -14,8 +14,20 @@ from .text_rules import (
 	_direct_answer_risk,
 	_enforce_easy_chat_reply,
 	_enforce_easy_hint,
-	_safe_hint_fallback,
 )
+
+
+MAX_HISTORY_TURNS_FOR_MODEL = 6
+MAX_HISTORY_ITEM_CHARS = 500
+
+
+def _compact_history_text(content: str) -> str:
+	text = " ".join((content or "").split())
+	if not text:
+		return ""
+	if len(text) <= MAX_HISTORY_ITEM_CHARS:
+		return text
+	return text[:MAX_HISTORY_ITEM_CHARS] + " ...[truncated]"
 
 
 def _groq_client(temperature: float) -> ChatGroq:
@@ -28,9 +40,10 @@ def _groq_client(temperature: float) -> ChatGroq:
 
 def _history_to_messages(history: list[dict[str, str]]) -> list[Any]:
 	messages: list[Any] = []
-	for item in history:
+	trimmed_history = history[-(MAX_HISTORY_TURNS_FOR_MODEL * 2) :]
+	for item in trimmed_history:
 		role = item.get("role", "")
-		content = item.get("content", "")
+		content = _compact_history_text(item.get("content", ""))
 		if not content:
 			continue
 		if role == "assistant":
@@ -58,9 +71,6 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 		output_text = _enforce_easy_hint(output_text)
 		latency_ms = int((time.perf_counter() - start_time) * 1000)
 		risk, reason = _direct_answer_risk(output_text)
-		if risk:
-			output_text = _safe_hint_fallback()
-			risk, reason = _direct_answer_risk(output_text)
 		return {
 			"provider": provider,
 			"model": model,
@@ -68,6 +78,9 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 			"latency_ms": latency_ms,
 			"direct_answer_risk": risk,
 			"direct_answer_reason": reason,
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": None,
 		}
 	except Exception as exc:
@@ -79,6 +92,9 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 			"latency_ms": latency_ms,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "Model call failed",
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": str(exc),
 		}
 
@@ -100,6 +116,9 @@ async def _run_chat_turn(
 			"latency_ms": 0,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "GROQ_API_KEY is missing",
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": "GROQ_API_KEY is not set",
 		}
 
@@ -123,15 +142,13 @@ async def _run_chat_turn(
 		output_text = _enforce_easy_chat_reply(str(reply.content))
 		latency_ms = int((time.perf_counter() - start_time) * 1000)
 		risk, reason = _direct_answer_risk(output_text)
-		if risk:
-			output_text = _safe_hint_fallback()
-			risk, reason = _direct_answer_risk(output_text)
 
-		history.append({"role": "user", "content": user_prompt})
+		compact_user_text = " ".join(message.strip().split()) if message.strip() else "(student requested code help)"
+		history.append({"role": "user", "content": compact_user_text})
 		history.append({"role": "assistant", "content": output_text})
 		_trim_history(history)
 		try:
-			append_chat_message(session_id, "user", user_prompt)
+			append_chat_message(session_id, "user", compact_user_text)
 			append_chat_message(session_id, "assistant", output_text)
 		except Exception:
 			pass
@@ -143,6 +160,9 @@ async def _run_chat_turn(
 			"latency_ms": latency_ms,
 			"direct_answer_risk": risk,
 			"direct_answer_reason": reason,
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": None,
 		}
 	except Exception as exc:
@@ -154,6 +174,9 @@ async def _run_chat_turn(
 			"latency_ms": latency_ms,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "Model call failed",
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": str(exc),
 		}
 
@@ -169,6 +192,9 @@ async def _run_groq_only(question: str, student_code: str, temperature: float) -
 			"latency_ms": 0,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "GROQ_API_KEY is missing",
+			"error_category": None,
+			"highlighted_lines": [],
+			"diagnostic_summary": None,
 			"error": "GROQ_API_KEY is not set",
 		}
 

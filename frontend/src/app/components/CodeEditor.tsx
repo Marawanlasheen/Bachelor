@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Resizable } from 're-resizable';
 import Editor from '@monaco-editor/react';
@@ -11,14 +11,19 @@ interface CodeEditorProps {
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
   onCodeChange: (questionId: string, code: string) => void;
   viewingSolution?: boolean;
+  highlightedLines?: number[];
+  onCodeEdited?: (editedLines: number[]) => void;
 }
 
-export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSolution }: CodeEditorProps) {
+export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSolution, highlightedLines = [], onCodeEdited }: CodeEditorProps) {
   const [code, setCode] = useState(question.currentCode || question.solution || question.starterCode || '');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(question.chatHistory || []);
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const decorationIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (viewingSolution && question.solution) {
@@ -28,6 +33,28 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
 
     setCode(question.currentCode || question.solution || question.starterCode || '');
   }, [viewingSolution, question.id, question.currentCode, question.solution, question.starterCode]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    const maxLine = model ? model.getLineCount() : 0;
+
+    const decorations = highlightedLines
+      .filter((line) => Number.isInteger(line) && line > 0 && line <= maxLine)
+      .map((line) => ({
+        range: new monaco.Range(line, 1, line, 1),
+        options: {
+          isWholeLine: true,
+          className: 'error-line-highlight',
+          glyphMarginClassName: 'error-line-glyph',
+          linesDecorationsClassName: 'error-line-decoration',
+        },
+      }));
+
+    decorationIdsRef.current = editor.deltaDecorations(decorationIdsRef.current, decorations);
+  }, [highlightedLines, question.id]);
 
   const handleRun = async () => {
     if (viewingSolution || isRunning) return;
@@ -88,7 +115,7 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
         transition={{ duration: 0.3 }}
         className="bg-card border-b border-border p-4 flex items-center justify-between"
       >
-		<h3>{editorTitle}</h3>
+        <h3>{editorTitle}</h3>
         <div className="flex items-center gap-2 ml-3 w-full justify-end">
           <button
             onClick={handleSubmit}
@@ -138,11 +165,29 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
               height="100%"
               defaultLanguage="java"
               value={code}
-              onChange={(value) => {
+              onMount={(editor, monaco) => {
+                editorRef.current = editor;
+                monacoRef.current = monaco;
+              }}
+              onChange={(value, ev) => {
                 if (viewingSolution) return;
+
                 const nextCode = value || '';
                 setCode(nextCode);
                 onCodeChange(question.id, nextCode);
+
+                if (!onCodeEdited || !ev || !Array.isArray(ev.changes)) return;
+                const touched = new Set<number>();
+                for (const change of ev.changes) {
+                  const start = Math.max(1, Number(change.range.startLineNumber || 1));
+                  const end = Math.max(start, Number(change.range.endLineNumber || start));
+                  for (let line = start; line <= end; line += 1) {
+                    touched.add(line);
+                  }
+                }
+                if (touched.size > 0) {
+                  onCodeEdited(Array.from(touched));
+                }
               }}
               theme={isDarkMode ? 'vs-dark' : 'vs-light'}
               options={{
@@ -152,6 +197,7 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
                 readOnly: viewingSolution,
+                glyphMargin: true,
               }}
             />
           </motion.div>

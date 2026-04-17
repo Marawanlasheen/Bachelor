@@ -7,7 +7,7 @@ import { chat } from '../api/tutorApi';
 const DEFAULT_MESSAGE: ChatMessage = {
   id: '1',
   sender: 'ai',
-  message: "Hi! I'm your Codding Buddy. I can help with assignments, coding questions, and debugging. What do you want to work on first?",
+  message: "Hi! I can see the code you share in this workspace and help you debug it. Ask me anything about your code, errors, or assignment steps.",
   timestamp: Date.now(),
 };
 

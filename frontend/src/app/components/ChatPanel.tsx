@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Bot, User, X } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { chat } from '../api/tutorApi';
+import { chat, TutorModelResult } from '../api/tutorApi';
 
 interface ChatPanelProps {
   sessionId: string;
@@ -12,16 +12,17 @@ interface ChatPanelProps {
   chatHistory?: ChatMessage[];
   viewingHistory?: boolean;
   onClose?: () => void;
+  onTutorResult?: (result: TutorModelResult) => void;
 }
 
 const DEFAULT_MESSAGE: ChatMessage = {
   id: '1',
   sender: 'ai',
-  message: "Hi! I'm here to help you with your Java assignment. Feel free to ask me any questions about the problem or concepts you're working on.",
+  message: "Hi! I can see the code in your Coding Workspace while we chat. Ask me anything about your current code, errors, or the problem, and I will guide you with hints.",
   timestamp: Date.now(),
 };
 
-export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode = '', chatHistory = [], viewingHistory = false, onClose }: ChatPanelProps) {
+export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode = '', chatHistory = [], viewingHistory = false, onClose, onTutorResult }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_MESSAGE]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -72,13 +73,16 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode =
         question: questionPrompt ?? '',
         studentCode: currentCode,
       });
+      const modelText = (result.result.response ?? '').trim();
+      const visibleMessage = modelText || `Model call failed: ${result.result.error ?? result.result.direct_answer_reason ?? 'unknown error'}`;
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        message: result.result.response,
+        message: visibleMessage,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, aiMessage]);
+      onTutorResult?.(result.result);
     } catch (e) {
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),

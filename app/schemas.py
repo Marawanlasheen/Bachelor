@@ -31,6 +31,9 @@ class JavaCompileResponse(BaseModel):
 	stdout: str
 	stderr: str
 	exit_code: int | None = None
+	error_category: str | None = None
+	highlighted_lines: list[int] = Field(default_factory=list)
+	diagnostic_summary: str | None = None
 
 
 class ResetSessionRequest(BaseModel):
@@ -51,6 +54,9 @@ class ModelResult(BaseModel):
 	direct_answer_risk: bool
 	direct_answer_reason: str
 	error: str | None = None
+	error_category: str | None = None
+	highlighted_lines: list[int] = Field(default_factory=list)
+	diagnostic_summary: str | None = None
 
 
 class CompareResponse(BaseModel):

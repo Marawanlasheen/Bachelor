@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import os
+import re
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -16,7 +17,7 @@ from .bank import (
 	_save_progress_store,
 )
 from .commands import _autograde_current_submission, _handle_local_commands
-from .compiler import compile_and_run_java
+from .compiler import analyze_java_diagnostics, compile_and_run_java, compile_java_only
 from .db import (
 	authenticate_user,
 	create_access_token,
@@ -60,6 +61,20 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="Hint-First", version="0.1.0", lifespan=_lifespan)
 _bearer = HTTPBearer(auto_error=False)
+
+
+def _extract_mentioned_lines(text: str) -> list[int]:
+	if not text:
+		return []
+	lines: set[int] = set()
+	for m in re.finditer(r"(?i)\bline\s+(\d+)\b", text):
+		try:
+			line = int(m.group(1))
+			if line > 0:
+				lines.add(line)
+		except Exception:
+			continue
+	return sorted(lines)
 
 
 def _require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict[str, Any]:
@@ -276,6 +291,9 @@ async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_
 					latency_ms=0,
 					direct_answer_risk=False,
 					direct_answer_reason="Autograder marked correct",
+					error_category=None,
+					highlighted_lines=[],
+					diagnostic_summary=None,
 					error=None,
 				),
 				progress=progress,
@@ -292,6 +310,28 @@ async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_
 		temperature=payload.temperature,
 	)
 
+	if payload.student_code.strip():
+		# Compile-only for tutor diagnostics: many student programs require stdin,
+		# and running them without input can produce misleading "runtime" errors.
+		compile_result = compile_java_only(payload.student_code)
+		diagnostics = analyze_java_diagnostics(compile_result)
+		model_hint = str(raw_result.get("response") or "").strip()
+		mentioned_lines = _extract_mentioned_lines(model_hint)
+		selected_lines = mentioned_lines if mentioned_lines else diagnostics["highlighted_lines"]
+		raw_result["error_category"] = diagnostics["error_category"]
+		raw_result["highlighted_lines"] = selected_lines
+		raw_result["diagnostic_summary"] = diagnostics["diagnostic_summary"]
+
+		category_label = str(diagnostics["error_category"] or "logical").capitalize()
+		lines = selected_lines
+		line_text = (
+			f"Focus lines: {', '.join(str(line) for line in lines)}. "
+			if isinstance(lines, list) and lines
+			else ""
+		)
+		prefix = f"Error type: {category_label}. {line_text}".strip()
+		raw_result["response"] = f"{prefix}\n\n{model_hint}".strip()
+
 	return ChatResponse(
 		policy=POLICY_TEXT,
 		session_id=session_id,
@@ -303,6 +343,7 @@ async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_
 @app.post("/compile/java", response_model=JavaCompileResponse)
 async def compile_java(payload: JavaCompileRequest) -> JavaCompileResponse:
 	result = compile_and_run_java(payload.code, payload.timeout_sec)
+	result.update(analyze_java_diagnostics(result))
 	return JavaCompileResponse(**result)
 
 
