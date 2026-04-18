@@ -203,13 +203,13 @@ export function AssignmentView({
                 <CheckCircle2 className="w-4 h-4 text-success" />
                 <span className="text-sm">Solved</span>
               </div>
-              <button
+              {/* <button
                 onClick={handleViewSolutionClick}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-secondary hover:bg-secondary/70 transition-colors"
               >
                 <Eye className="w-4 h-4" />
                 {viewingSolution ? 'Hide Solution' : 'View Solution'}
-              </button>
+              </button> */}
 
               {showSolutionDialog && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSolutionDialog(false)}>
