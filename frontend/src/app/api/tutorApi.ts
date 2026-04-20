@@ -40,6 +40,35 @@ export interface BankItemPublic {
   prompt: string;
 }
 
+export interface UploadedQuestion {
+  id: string;
+  title: string;
+  prompt: string;
+  preview?: string;
+}
+
+export interface UploadedAssignment {
+  id: string;
+  title: string;
+  questions: UploadedQuestion[];
+  created_at?: number;
+  updated_at?: number;
+}
+
+export interface StoredChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  message: string;
+  timestamp: number;
+}
+
+export interface StoredChatConversation {
+  id: string;
+  title: string;
+  messages: StoredChatMessage[];
+  updated_at: number;
+}
+
 export interface JavaCompileResponse {
   compile_success: boolean;
   run_success: boolean;
@@ -131,6 +160,88 @@ export async function listBankItems(): Promise<BankItemPublic[]> {
     throw new Error(`HTTP ${response.status}`);
   }
   return (await response.json()) as BankItemPublic[];
+}
+
+export async function listUploadedAssignments(): Promise<UploadedAssignment[]> {
+  const response = await fetch(apiUrl('/assignments/uploaded'), {
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+  return (await response.json()) as UploadedAssignment[];
+}
+
+export async function uploadAssignmentPdf(params: {
+  assignmentName: string;
+  file: File;
+}): Promise<UploadedAssignment> {
+  const formData = new FormData();
+  formData.append('assignment_name', params.assignmentName);
+  formData.append('pdf_file', params.file);
+
+  const response = await fetch(apiUrl('/assignments/upload-pdf'), {
+    method: 'POST',
+    headers: { ...authHeader() },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+
+  return (await response.json()) as UploadedAssignment;
+}
+
+export async function listChatConversationsRemote(): Promise<StoredChatConversation[]> {
+  const response = await fetch(apiUrl('/chat/conversations'), {
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+  return (await response.json()) as StoredChatConversation[];
+}
+
+export async function saveChatConversationRemote(params: {
+  conversationId: string;
+  title: string;
+  messages: StoredChatMessage[];
+  updatedAt: number;
+}): Promise<void> {
+  const response = await fetch(apiUrl('/chat/conversations'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({
+      conversation_id: params.conversationId,
+      title: params.title,
+      messages: params.messages,
+      updated_at: params.updatedAt,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
+}
+
+export async function deleteChatConversationRemote(conversationId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/chat/conversations/${encodeURIComponent(conversationId)}`), {
+    method: 'DELETE',
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(msg);
+  }
 }
 
 export async function compileJava(params: {

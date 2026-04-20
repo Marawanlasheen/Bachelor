@@ -6,7 +6,17 @@ import { AssignmentView } from './components/AssignmentView';
 import { Assignment, ChatConversation, ChatMessage } from './types';
 import { clearStoredAuth, getStoredAuth, saveStoredAuth, StoredAuth } from './api/session';
 import { login, me, signup } from './api/auth';
-import { chat, getTrackerStatus, listBankItems, setCurrentItem } from './api/tutorApi';
+import {
+  chat,
+  deleteChatConversationRemote,
+  getTrackerStatus,
+  listBankItems,
+  listChatConversationsRemote,
+  listUploadedAssignments,
+  saveChatConversationRemote,
+  setCurrentItem,
+  uploadAssignmentPdf,
+} from './api/tutorApi';
 
 type View = 'chat' | 'assignments' | 'assignment-detail';
 
@@ -25,10 +35,6 @@ function parseItemId(itemId: string): { pa: number; q: number } | null {
   const m = itemId.trim().match(/^E\s*(\d+)\s*[-.]\s*(\d+)$/i);
   if (!m) return null;
   return { pa: Number(m[1]), q: Number(m[2]) };
-}
-
-function chatConversationsKey(sessionId: string): string {
-  return `chat_conversations_${sessionId}`;
 }
 
 function questionDraftsKey(sessionId: string): string {
@@ -97,6 +103,13 @@ export default function App() {
 
       const drafts = loadQuestionDrafts(sessionId);
 
+      let uploadedAssignmentsRaw: Awaited<ReturnType<typeof listUploadedAssignments>> = [];
+      try {
+        uploadedAssignmentsRaw = await listUploadedAssignments();
+      } catch {
+        uploadedAssignmentsRaw = [];
+      }
+
       const questions = items.map((it) => ({
         id: it.item_id,
         title: it.title,
@@ -145,7 +158,32 @@ export default function App() {
           };
         });
 
-      setAssignments(sortedAssignments);
+      const uploadedAssignments: Assignment[] = uploadedAssignmentsRaw.map((assignment) => {
+        const questions = assignment.questions.map((q) => ({
+          id: q.id,
+          title: q.title,
+          description: q.preview?.trim() || shortDescription(q.prompt),
+          prompt: q.prompt,
+          difficulty: 'Easy' as const,
+          solved: false,
+          starterCode: '',
+          currentCode: drafts[q.id] ?? '',
+          chatHistory: [],
+        }));
+        const solvedCount = questions.filter((q) => q.solved).length;
+
+        return {
+          id: assignment.id,
+          title: assignment.title,
+          description: `${questions.length} uploaded questions`,
+          dueDate: '',
+          progress: computeProgressPercent(solvedCount, questions.length),
+          questions,
+          pdfUrl: '',
+        };
+      });
+
+      setAssignments([...uploadedAssignments, ...sortedAssignments]);
     } catch {
       setAssignments([]);
     }
@@ -197,33 +235,26 @@ export default function App() {
       return;
     }
 
-    try {
-      const raw = localStorage.getItem(chatConversationsKey(sessionId));
-      if (!raw) {
-        setChatConversations([]);
-        setActiveChatId(null);
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as ChatConversation[];
-      if (Array.isArray(parsed)) {
-        const sorted = parsed.sort((a, b) => b.updatedAt - a.updatedAt);
+    const hydrateConversations = async () => {
+      try {
+        const remote = await listChatConversationsRemote();
+        const mapped: ChatConversation[] = remote.map((conversation) => ({
+          id: conversation.id,
+          title: conversation.title,
+          messages: conversation.messages,
+          updatedAt: conversation.updated_at,
+        }));
+        const sorted = mapped.sort((a, b) => b.updatedAt - a.updatedAt);
         setChatConversations(sorted);
         setActiveChatId(null);
-      } else {
+      } catch {
         setChatConversations([]);
         setActiveChatId(null);
       }
-    } catch {
-      setChatConversations([]);
-      setActiveChatId(null);
-    }
-  }, [sessionId]);
+    };
 
-  useEffect(() => {
-    if (!sessionId) return;
-    localStorage.setItem(chatConversationsKey(sessionId), JSON.stringify(chatConversations));
-  }, [sessionId, chatConversations]);
+    void hydrateConversations();
+  }, [sessionId]);
 
   const handleAuthSubmit = async () => {
     setAuthError('');
@@ -274,6 +305,17 @@ export default function App() {
     const sorted = [...nextConversations].sort((a, b) => b.updatedAt - a.updatedAt);
     setChatConversations(sorted);
     setActiveChatId(nextActiveId);
+
+    const targetConversation =
+      sorted.find((conversation) => conversation.id === nextActiveId) ?? sorted[0] ?? null;
+    if (targetConversation) {
+      void saveChatConversationRemote({
+        conversationId: targetConversation.id,
+        title: targetConversation.title,
+        messages: targetConversation.messages,
+        updatedAt: targetConversation.updatedAt,
+      }).catch(() => undefined);
+    }
   };
 
   const handleNewChat = () => {
@@ -286,6 +328,19 @@ export default function App() {
     setActiveChatId(conversationId);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
+  };
+
+  const handleDeleteRecentChat = (conversationId: string) => {
+    setChatConversations((prev) => prev.filter((conversation) => conversation.id !== conversationId));
+    if (activeChatId === conversationId) {
+      setActiveChatId(null);
+    }
+    void deleteChatConversationRemote(conversationId).catch(() => undefined);
+  };
+
+  const handleUploadPdf = async (file: File, assignmentName: string) => {
+    await uploadAssignmentPdf({ assignmentName, file });
+    await reloadAssignments();
   };
 
   const handleAssignmentClick = (id: string) => {
@@ -454,6 +509,7 @@ export default function App() {
         recents={chatConversations}
         activeRecentId={activeChatId}
         onRecentClick={handleOpenRecentChat}
+        onRecentDelete={handleDeleteRecentChat}
         onLogout={handleLogout}
       />
 
@@ -473,7 +529,11 @@ export default function App() {
         )}
 
         {activeView === 'assignments' && (
-          <AssignmentsList assignments={assignments} onAssignmentClick={handleAssignmentClick} />
+          <AssignmentsList
+            assignments={assignments}
+            onAssignmentClick={handleAssignmentClick}
+            onUploadPdf={handleUploadPdf}
+          />
         )}
 
         {activeView === 'assignment-detail' && selectedAssignment && (

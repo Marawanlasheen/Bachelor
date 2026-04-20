@@ -7,3 +7,5 @@ sqlalchemy
 psycopg2-binary
 PyJWT
 passlib
+pypdf
+python-multipart

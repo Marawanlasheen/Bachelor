@@ -1,0 +1,80 @@
+[
+  {
+    "id": "E5-1",
+    "title": "Exercise 5-1 Fibonacci The Fibonacci numbers are deﬁned as follows. The zeroth Fibonacci number is",
+    "prompt": "Exercise 5-1 Fibonacci The Fibonacci numbers are deﬁned as follows. The zeroth Fibonacci number is\n0. The ﬁrst Fibonacci number is 1. The second Fibonacci number is 1 + 0 = 1. The third Fibonacci number\nis 1 + 1 = 2. In other words, except for the ﬁrst two numbers each Fibonacci number is the sum of the two\nprevious numbers. Thus, Fibonacci Numbers, or “How many rabbits will you get after a year?” is given by\nFib(0) = 0\nFib(1) = 1\nFib(n) = Fib(n − 1) +Fib(n − 2)\nWrite a Java program Fibonacci.Java that computes the nth Fibonacci number:Write a method fib\nto calculate the nth Fibonacci number. Add a main method that asks the user for n and displays the\nresult, i.e. the nth Fibonacci number.\nFor more information on the use of Fibonacci Numbers please see Dr. Ron Knott’s excellent site at\n1. 2.http://www.ee.surrey.ac.uk/Personal/R.Knott/Fibonacci/fib.html",
+    "preview": "Exercise 5-1 Fibonacci The Fibonacci numbers are deﬁned as follows."
+  },
+  {
+    "id": "E5-2",
+    "title": "Exercise 5-2 Maximum",
+    "prompt": "Exercise 5-2 Maximum\nGiven the following skeleton for your program, use the concept of overloading to deﬁne three versions of\nthe method max, which should work as follows:\n• The ﬁrst method should ﬁnd the maximum of two integers and return it.\n• The second method should calculate the maximum of two ﬂoating-point numbers and return it.\n• The third method should compare two strings and return the one that would appear later in the dictio-\nnary (lexicographical order). Hint: The method x.compareTo(y), where x and y are strings, returns\nan integer greater than zero if the string x appears later than y in the dictionary.\npublicclass Max\n{\npublicstaticvoid main ( Stringargs [ ] )\n{\nSystem . o u t . println ( max ( 1 , 5 ) ) ;\nSystem . o u t . println ( max ( 1 . 5 , 5 . 5 ) ) ;\nSystem . o u t . println ( max ( \" Hello \" , \" World \" ) ) ;\n}\n}",
+    "preview": "Exercise 5-2 Maximum Given the following skeleton for your program, use the concept of overloading to deﬁne three versio"
+  },
+  {
+    "id": "E5-3",
+    "title": "Exercise 5-3 Run Length Decompression",
+    "prompt": "Exercise 5-3 Run Length Decompression\nGiven a String containing numbers and uppercase characters (A-Z), write Java methods that decompresses\nthe String.\nInput: 12W1B12W3B24W1B14W\nOutput: WWWWWWWWWWWWBWWWWWWWWWWWWBBBWWWWWWWWWWWWWWWWWWWWWWWWBWWWWWWWWWWWWWW",
+    "preview": "Exercise 5-3 Run Length Decompression Given a String containing numbers and uppercase characters (A-Z), write Java metho"
+  },
+  {
+    "id": "E5-4",
+    "title": "Exercise 5-4 Power",
+    "prompt": "Exercise 5-4 Power\nWrite a program that implements the deﬁnition ofpower,where m and n are integers entered by the user, such\n3\n\nthat m is the base and n is the exponent:\npower(m, n) = mn\nWrite a main to test your method.",
+    "preview": "Exercise 5-4 Power Write a program that implements the deﬁnition ofpower,where m and n are integers entered by the user,"
+  },
+  {
+    "id": "E5-5",
+    "title": "Exercise 5-5 Euler",
+    "prompt": "Exercise 5-5 Euler\nWrite a method Euler to calculate the value of the mathematical constant e which is deﬁned as:\ne = 1\n1! + 1\n2! + 1\n3! + . . .+ 1\nn!\nImplement ﬁrst the method factorial ( f actorial(n) = n!) Write a main method to test your method.",
+    "preview": "Exercise 5-5 Euler Write a method Euler to calculate the value of the mathematical constant e which is deﬁned as: e = 1 "
+  },
+  {
+    "id": "E5-6",
+    "title": "Exercise 5-6 Perfect Number",
+    "prompt": "Exercise 5-6 Perfect Number\nA perfect number is a positive integer that is equal to the sum of its proper positive divisors. A proper divisor\nof an integer n is an integer between 1 (inclusive) and n (exclusive) that divides n with no remainder. For\nexample, 6 is a perfect number because 6 = 1+2+3.\nWrite an algorithm that prints all perfect integers that are less than or equal to a given integern. The program\nshould consist of four methods:\n• A method that will calculate the sum of divisors of a given integer n\n• A method that will check whether a number is a perfect number\n• A method that will print all perfect numbers that are less than or equal a given integer n\n• The main method",
+    "preview": "Exercise 5-6 Perfect Number A perfect number is a positive integer that is equal to the sum of its proper positive divis"
+  },
+  {
+    "id": "E5-7",
+    "title": "Exercise 5-7 Palindrome",
+    "prompt": "Exercise 5-7 Palindrome\nWrite a java program that determines whether the text the user inputs is a palindrome or not. A palindrome\nis a piece of text that can be read the same way in either direction (left to right and right to left). Examples\nof palindromes include words such as racecar and noon.",
+    "preview": "Exercise 5-7 Palindrome Write a java program that determines whether the text the user inputs is a palindrome or not."
+  },
+  {
+    "id": "E5-8",
+    "title": "Exercise 5-8 Prime",
+    "prompt": "Exercise 5-8 Prime\nWrite a method isPrime that determines whether a number is a prime number. A number is prime if it is\n6\n\ndivisible only by one and itself. For example 11 is a prime number and 14 is not a prime number.\nWrite a main method to test your method.\nA Sample output would be:\nEnter a number: 3\n3 is prime",
+    "preview": "Exercise 5-8 Prime Write a method isPrime that determines whether a number is a prime number."
+  },
+  {
+    "id": "E5-9",
+    "title": "Exercise 5-9 Character Count",
+    "prompt": "Exercise 5-9 Character Count\nWrite a method named count that accepts two arguments: a String value, and a char value. Your method\nis to return the total number of times the second argument (the single character value) appears inside of the\nﬁrst argument. For example:\npublicclass Count {\npublicstaticvoid main ( Stringargs [ ] ) {\nSystem . o u t . println ( count ( \" Hello \" , ’ l ’ ) ) ; / / displays 2\nSystem . o u t . println ( count ( \" Hello \" , ’ o ’ ) ) ; / / displays 1\nSystem . o u t . println ( count ( \" Hello \" , ’H’ ) ) ; / / displays 1\nSystem . o u t . println ( count ( \" Hello \" , ’ h ’ ) ) ; / / displays 0\n}\n}\n7",
+    "preview": "Exercise 5-9 Character Count Write a method named count that accepts two arguments: a String value, and a char value."
+  },
+  {
+    "id": "E5-10",
+    "title": "Exercise 5-10 Sum of Digits",
+    "prompt": "Exercise 5-10 Sum of Digits\nWrite a java method sumOfDigits that takes a string consisting of text and non-negative numbers as input\nand returns the sum of the digits of all the numbers in the string. For example for the string: ” The year has\n12 months, each month has 4 weeks and the week has 7 days.”, your program should return 14, i.e 1+2+4+7",
+    "preview": "Exercise 5-10 Sum of Digits Write a java method sumOfDigits that takes a string consisting of text and non-negative numb"
+  },
+  {
+    "id": "E5-11",
+    "title": "Exercise 5-11 Z-Algorithm - Midterm Spring 2013",
+    "prompt": "Exercise 5-11 Z-Algorithm - Midterm Spring 2013\nGiven a string S of length n, the Z-Algorithm produces a string Z where Z.charAt(i) is the length of\nthe longest substring starting from S.charAt(i) which is also a preﬁx of S, i.e. the maximum k such that\nS.charAt(j) == S.charAt(i+j) for all 0 < j < k . Note that Z.charAt(i)=0 means that S.charAt(0)\n8\n\n!= S.charAt(i) .\nThe string x is a preﬁx of the string w if and only if w = xy .\nWrite a method that takes a string as argument and returns a string according to the Z-Algorithm presented\nabove.\nAssume that Z.charAt(0) is always equal to 0.\nFor example:\nzFunction(\"ababa\") –> 00301\nzFunction(\"axbyaxba) –> 00003001\nzFunction(\"ababababx) –> 006040200\nzFunction(\"CSEN\") –> 0000\nExplanation of the ﬁrst sample run: zFunction(\"ababa\") –> 00301\nFor the ﬁrst character a, the z value is 0. For the second character b, the Z value is 0 since any preﬁx of\n\"ababa\" starts with a. For the third character a, the longest substring starting from the third position is\n\"aba\" that is also a preﬁx of\"ababa\". Thus, the Z-value ofa is 3. The fourth character b is having a Z-value\n0. The last character a is having a Z-value 1.",
+    "preview": "Exercise 5-11 Z-Algorithm - Midterm Spring 2013 Given a string S of length n, the Z-Algorithm produces a string Z where "
+  },
+  {
+    "id": "E5-12",
+    "title": "Exercise 5-12 Persistent numbers - Midterm Spring 2015",
+    "prompt": "Exercise 5-12 Persistent numbers - Midterm Spring 2015\n1. Write a method that takes a number and returns the multiplication of its digits.",
+    "preview": "Exercise 5-12 Persistent numbers - Midterm Spring 2015 1."
+  },
+  {
+    "id": "E5-13",
+    "title": "Exercise 5-13 Letter Mapping - Midterm Spring 2018",
+    "prompt": "Exercise 5-13 Letter Mapping - Midterm Spring 2018\nThe international standard letter/number mapping is given below.\n1. Write a method that given an uppercase letter as parameter will return a number as indicated above.\npublic static int getNumber(char c)\nFor example, if the character c has a value ’K’, the method should return 5.\nNote: You have to use a switch statement",
+    "preview": "Exercise 5-13 Letter Mapping - Midterm Spring 2018 The international standard letter/number mapping is given below."
+  }
+]

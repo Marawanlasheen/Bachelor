@@ -119,3 +119,39 @@ class AuthResponse(BaseModel):
 	token_type: str = "bearer"
 	user: AuthUser
 	progress: dict[str, Any] | None = None
+
+
+class ChatMessageStored(BaseModel):
+	id: str
+	sender: str
+	message: str
+	timestamp: int
+
+
+class ChatConversationStored(BaseModel):
+	id: str
+	title: str
+	messages: list[ChatMessageStored] = Field(default_factory=list)
+	updated_at: int
+
+
+class ChatConversationUpsertRequest(BaseModel):
+	conversation_id: str = Field(..., min_length=1)
+	title: str = Field(..., min_length=1)
+	messages: list[ChatMessageStored] = Field(default_factory=list)
+	updated_at: int
+
+
+class UploadedQuestion(BaseModel):
+	id: str
+	title: str
+	prompt: str
+	preview: str | None = None
+
+
+class UploadedAssignment(BaseModel):
+	id: str
+	title: str
+	questions: list[UploadedQuestion] = Field(default_factory=list)
+	created_at: int | None = None
+	updated_at: int | None = None

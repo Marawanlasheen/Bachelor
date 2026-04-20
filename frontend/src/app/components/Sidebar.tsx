@@ -1,6 +1,12 @@
-import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatConversation } from '../types';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +27,7 @@ interface SidebarProps {
   recents: ChatConversation[];
   activeRecentId: string | null;
   onRecentClick: (conversationId: string) => void;
+  onRecentDelete: (conversationId: string) => void;
   onLogout: () => void;
 }
 
@@ -32,6 +39,7 @@ export function Sidebar({
   recents,
   activeRecentId,
   onRecentClick,
+  onRecentDelete,
   onLogout,
 }: SidebarProps) {
   const menuItems = [
@@ -120,16 +128,41 @@ export function Sidebar({
                     const isActiveRecent = activeRecentId === conversation.id && normalizedView === 'chat';
 
                     return (
-                      <button
+                      <div
                         key={conversation.id}
-                        onClick={() => onRecentClick(conversation.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors text-sm truncate ${
+                        className={`w-full flex items-center gap-1 px-2 py-1 rounded-lg mb-1 transition-colors text-sm ${
                           isActiveRecent ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                         }`}
-                        title={conversation.title}
                       >
-                        {conversation.title}
-                      </button>
+                        <button
+                          onClick={() => onRecentClick(conversation.id)}
+                          className="flex-1 text-left px-1 py-1 truncate"
+                          title={conversation.title}
+                        >
+                          {conversation.title}
+                        </button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="p-1 rounded hover:bg-secondary/80 transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Chat options"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => onRecentDelete(conversation.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete Chat
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     );
                   })
                 )}

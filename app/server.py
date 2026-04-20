@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
 import os
 import re
+import uuid
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -22,18 +23,26 @@ from .db import (
 	authenticate_user,
 	create_access_token,
 	create_user,
+	delete_chat_conversation,
 	delete_chat_messages,
 	decode_access_token,
 	get_user_by_session_id,
 	init_db,
+	list_chat_conversations,
+	list_uploaded_assignments,
+	upsert_chat_conversation,
+	upsert_uploaded_assignment,
 )
 from .llm import _run_chat_turn, _run_groq_only
+from .pdf_parser import extract_pdf_text, split_questions_from_text
 from .schemas import (
 	AuthResponse,
 	AuthUser,
 	BankItemPublic,
 	ChatRequest,
 	ChatResponse,
+	ChatConversationStored,
+	ChatConversationUpsertRequest,
 	CompareRequest,
 	CompareResponse,
 	JavaCompileRequest,
@@ -43,6 +52,8 @@ from .schemas import (
 	ResetSessionRequest,
 	SetCurrentRequest,
 	SignupRequest,
+	UploadedAssignment,
+	UploadedQuestion,
 )
 from . import state
 from .state import BANK_LOCK, CHAT_SESSIONS, POLICY_TEXT, PROGRESS_BY_SESSION
@@ -104,7 +115,7 @@ _allowed_origins = _cors_from_env if _cors_from_env else _DEV_ALLOWED_ORIGINS
 app.add_middleware(
 	CORSMiddleware,
 	allow_origins=_allowed_origins,
-	allow_credentials=True,
+	allow_credentials=False,
 	allow_methods=["*"],
 	allow_headers=["*"],
 )
@@ -130,6 +141,78 @@ def list_bank_items() -> list[BankItemPublic]:
 			BankItemPublic(item_id=p.item_id, title=p.title, prompt=p.prompt)
 			for p in state.PROBLEM_BANK
 		]
+
+
+@app.get("/assignments/uploaded", response_model=list[UploadedAssignment])
+def list_uploaded_assignments_route(user: dict[str, Any] = Depends(_require_user)) -> list[UploadedAssignment]:
+	rows = list_uploaded_assignments(user["session_id"])
+	result: list[UploadedAssignment] = []
+	for row in rows:
+		questions = [UploadedQuestion(**q) for q in row.get("questions", []) if isinstance(q, dict)]
+		result.append(
+			UploadedAssignment(
+				id=str(row.get("id", "")),
+				title=str(row.get("title", "Uploaded Assignment")),
+				questions=questions,
+				created_at=int(row.get("created_at", 0) or 0),
+				updated_at=int(row.get("updated_at", 0) or 0),
+			)
+		)
+	return result
+
+
+@app.post("/assignments/upload-pdf", response_model=UploadedAssignment)
+async def upload_assignment_pdf(
+	assignment_name: str = Form(...),
+	pdf_file: UploadFile = File(...),
+	user: dict[str, Any] = Depends(_require_user),
+) -> UploadedAssignment:
+	name = assignment_name.strip()
+	if len(name) < 2:
+		raise HTTPException(status_code=400, detail="Assignment name is required")
+
+	filename = (pdf_file.filename or "").lower()
+	content_type = (pdf_file.content_type or "").lower()
+	if not filename.endswith(".pdf") and content_type not in {"application/pdf", "application/x-pdf"}:
+		raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+	max_pdf_bytes = int(os.getenv("MAX_PDF_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+	pdf_bytes = await pdf_file.read()
+	if not pdf_bytes:
+		raise HTTPException(status_code=400, detail="Uploaded PDF is empty")
+	if len(pdf_bytes) > max_pdf_bytes:
+		raise HTTPException(status_code=413, detail=f"PDF is too large. Max size is {max_pdf_bytes // (1024 * 1024)} MB")
+
+	try:
+		extracted_text = extract_pdf_text(pdf_bytes)
+	except Exception:
+		raise HTTPException(status_code=400, detail="Failed to parse PDF content")
+
+	questions_raw = split_questions_from_text(extracted_text)
+	if not questions_raw:
+		raise HTTPException(status_code=400, detail="No questions were found in the uploaded PDF")
+
+	assignment_id = f"up_{uuid.uuid4().hex[:12]}"
+	questions: list[dict[str, str]] = []
+	for idx, q in enumerate(questions_raw, start=1):
+		q_title = str(q.get("title", "")).strip() or f"Question {idx}"
+		q_prompt = str(q.get("prompt", "")).strip()
+		q_id_raw = str(q.get("id", "")).strip() or f"Q{idx}"
+		q_id = f"{assignment_id}:{q_id_raw}"
+		questions.append({"id": q_id, "title": q_title, "prompt": q_prompt})
+
+	upsert_uploaded_assignment(
+		session_id=user["session_id"],
+		assignment_id=assignment_id,
+		title=name,
+		questions=questions,
+	)
+
+	return UploadedAssignment(
+		id=assignment_id,
+		title=name,
+		questions=[UploadedQuestion(**q) for q in questions],
+	)
 
 
 @app.post("/auth/signup", response_model=AuthResponse)
@@ -338,6 +421,42 @@ async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_
 		result=ModelResult(**raw_result),
 		progress=progress,
 	)
+
+
+@app.get("/chat/conversations", response_model=list[ChatConversationStored])
+def list_chat_conversations_route(user: dict[str, Any] = Depends(_require_user)) -> list[ChatConversationStored]:
+	rows = list_chat_conversations(user["session_id"])
+	result: list[ChatConversationStored] = []
+	for row in rows:
+		try:
+			result.append(ChatConversationStored(**row))
+		except Exception:
+			continue
+	return result
+
+
+@app.post("/chat/conversations")
+def upsert_chat_conversation_route(
+	payload: ChatConversationUpsertRequest,
+	user: dict[str, Any] = Depends(_require_user),
+) -> dict[str, str]:
+	upsert_chat_conversation(
+		session_id=user["session_id"],
+		conversation_id=payload.conversation_id,
+		title=payload.title,
+		messages=[m.model_dump() for m in payload.messages],
+		updated_at_ms=payload.updated_at,
+	)
+	return {"status": "ok", "conversation_id": payload.conversation_id}
+
+
+@app.delete("/chat/conversations/{conversation_id}")
+def delete_chat_conversation_route(
+	conversation_id: str,
+	user: dict[str, Any] = Depends(_require_user),
+) -> dict[str, Any]:
+	deleted = delete_chat_conversation(user["session_id"], conversation_id)
+	return {"status": "ok", "deleted": deleted, "conversation_id": conversation_id}
 
 
 @app.post("/compile/java", response_model=JavaCompileResponse)

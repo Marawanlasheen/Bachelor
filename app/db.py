@@ -79,6 +79,27 @@ chat_messages_table = Table(
 	Column("created_at_ms", BigInteger, nullable=False),
 )
 
+chat_conversations_table = Table(
+	"chat_conversations",
+	metadata,
+	Column("conversation_id", String(64), primary_key=True),
+	Column("session_id", String(64), nullable=False),
+	Column("title", Text, nullable=False),
+	Column("messages_json", Text, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+uploaded_assignments_table = Table(
+	"uploaded_assignments",
+	metadata,
+	Column("assignment_id", String(64), primary_key=True),
+	Column("session_id", String(64), nullable=False),
+	Column("title", Text, nullable=False),
+	Column("questions_json", Text, nullable=False),
+	Column("created_at_ms", BigInteger, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
 
 def init_db() -> None:
 	metadata.create_all(engine)
@@ -301,3 +322,144 @@ def append_chat_message(session_id: str, role: str, content: str) -> None:
 def delete_chat_messages(session_id: str) -> None:
 	with engine.begin() as conn:
 		conn.execute(delete(chat_messages_table).where(chat_messages_table.c.session_id == session_id))
+
+
+def list_chat_conversations(session_id: str) -> list[dict[str, Any]]:
+	conversations: list[dict[str, Any]] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				chat_conversations_table.c.conversation_id,
+				chat_conversations_table.c.title,
+				chat_conversations_table.c.messages_json,
+				chat_conversations_table.c.updated_at_ms,
+			)
+			.where(chat_conversations_table.c.session_id == session_id)
+			.order_by(chat_conversations_table.c.updated_at_ms.desc())
+		).fetchall()
+
+	for row in rows:
+		m = row._mapping
+		try:
+			messages = json.loads(str(m["messages_json"]))
+			if not isinstance(messages, list):
+				messages = []
+		except Exception:
+			messages = []
+
+		conversations.append(
+			{
+				"id": str(m["conversation_id"]),
+				"title": str(m["title"]),
+				"messages": messages,
+				"updated_at": int(m["updated_at_ms"]),
+			}
+		)
+
+	return conversations
+
+
+def upsert_chat_conversation(
+	session_id: str,
+	conversation_id: str,
+	title: str,
+	messages: list[dict[str, Any]],
+	updated_at_ms: int,
+) -> None:
+	messages_json = json.dumps(messages, ensure_ascii=False)
+	with engine.begin() as conn:
+		updated = conn.execute(
+			update(chat_conversations_table)
+			.where(chat_conversations_table.c.conversation_id == conversation_id)
+			.where(chat_conversations_table.c.session_id == session_id)
+			.values(
+				title=title,
+				messages_json=messages_json,
+				updated_at_ms=updated_at_ms,
+			)
+		)
+		if int(updated.rowcount or 0) == 0:
+			conn.execute(
+				insert(chat_conversations_table).values(
+					conversation_id=conversation_id,
+					session_id=session_id,
+					title=title,
+					messages_json=messages_json,
+					updated_at_ms=updated_at_ms,
+				)
+			)
+
+
+def delete_chat_conversation(session_id: str, conversation_id: str) -> bool:
+	with engine.begin() as conn:
+		deleted = conn.execute(
+			delete(chat_conversations_table)
+			.where(chat_conversations_table.c.session_id == session_id)
+			.where(chat_conversations_table.c.conversation_id == conversation_id)
+		)
+	return int(deleted.rowcount or 0) > 0
+
+
+def list_uploaded_assignments(session_id: str) -> list[dict[str, Any]]:
+	assignments: list[dict[str, Any]] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				uploaded_assignments_table.c.assignment_id,
+				uploaded_assignments_table.c.title,
+				uploaded_assignments_table.c.questions_json,
+				uploaded_assignments_table.c.created_at_ms,
+				uploaded_assignments_table.c.updated_at_ms,
+			)
+			.where(uploaded_assignments_table.c.session_id == session_id)
+			.order_by(uploaded_assignments_table.c.created_at_ms.desc())
+		).fetchall()
+
+	for row in rows:
+		m = row._mapping
+		try:
+			questions = json.loads(str(m["questions_json"]))
+			if not isinstance(questions, list):
+				questions = []
+		except Exception:
+			questions = []
+
+		assignments.append(
+			{
+				"id": str(m["assignment_id"]),
+				"title": str(m["title"]),
+				"questions": questions,
+				"created_at": int(m["created_at_ms"]),
+				"updated_at": int(m["updated_at_ms"]),
+			}
+		)
+
+	return assignments
+
+
+def upsert_uploaded_assignment(
+	session_id: str,
+	assignment_id: str,
+	title: str,
+	questions: list[dict[str, Any]],
+) -> None:
+	now_ms = _now_ms()
+	questions_json = json.dumps(questions, ensure_ascii=False)
+	with engine.begin() as conn:
+		updated = conn.execute(
+			update(uploaded_assignments_table)
+			.where(uploaded_assignments_table.c.assignment_id == assignment_id)
+			.where(uploaded_assignments_table.c.session_id == session_id)
+			.values(title=title, questions_json=questions_json, updated_at_ms=now_ms)
+		)
+		if int(updated.rowcount or 0) == 0:
+			conn.execute(
+				insert(uploaded_assignments_table).values(
+					assignment_id=assignment_id,
+					session_id=session_id,
+					title=title,
+					questions_json=questions_json,
+					created_at_ms=now_ms,
+					updated_at_ms=now_ms,
+				)
+			)
