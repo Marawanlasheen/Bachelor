@@ -104,6 +104,7 @@ async def _run_chat_turn(
 	message: str,
 	question: str,
 	student_code: str,
+	chat_mode: str,
 	temperature: float,
 ) -> dict[str, Any]:
 	model_name = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
@@ -122,7 +123,7 @@ async def _run_chat_turn(
 			"error": "GROQ_API_KEY is not set",
 		}
 
-	user_prompt = _build_chat_prompt_with_progress(session_id, message, question, student_code)
+	user_prompt = _build_chat_prompt_with_progress(session_id, message, question, student_code, chat_mode)
 	history = CHAT_SESSIONS.get(session_id)
 	if history is None:
 		try:
@@ -139,7 +140,11 @@ async def _run_chat_turn(
 		messages.append(HumanMessage(content=user_prompt))
 
 		reply = await llm.ainvoke(messages)
-		output_text = _enforce_easy_chat_reply(str(reply.content))
+		raw_text = str(reply.content).strip()
+		if chat_mode == "mini":
+			output_text = _enforce_easy_hint(raw_text)
+		else:
+			output_text = raw_text if raw_text else _enforce_easy_chat_reply(raw_text)
 		latency_ms = int((time.perf_counter() - start_time) * 1000)
 		risk, reason = _direct_answer_risk(output_text)
 

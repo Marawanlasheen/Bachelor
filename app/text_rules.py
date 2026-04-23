@@ -57,7 +57,14 @@ def _build_prompt(question: str, student_code: str) -> str:
 	)
 
 
-def _build_chat_prompt(message: str, question: str, student_code: str) -> str:
+def _looks_like_explanation_request(text: str) -> bool:
+	lower = text.lower()
+	return bool(
+		re.search(r"\b(explain|why|how\s+does|how\s+to|what\s+is|difference\s+between|concept)\b", lower)
+	)
+
+
+def _build_chat_prompt(message: str, question: str, student_code: str, chat_mode: str = "main") -> str:
 	parts: list[str] = []
 	if message.strip():
 		parts.append(f"Student Message:\n{message.strip()}")
@@ -72,10 +79,36 @@ def _build_chat_prompt(message: str, question: str, student_code: str) -> str:
 	if not parts:
 		parts.append("Student Message:\nHi tutor, can you help me?")
 
-	parts.append(
-		"Reply naturally as a coding buddy. If the student asks a general coding question, answer that directly and do not force the conversation back to PA exercises. Keep it short and give only one small next hint if needed."
-	)
+	combined = " ".join([message.strip(), question.strip()]).strip()
+	if chat_mode == "mini":
+		parts.append(
+			"Mini chat mode: provide hint-only guidance. Give one small next hint and one short follow-up question. "
+			"Do not provide full solutions or full rewrites."
+		)
+	else:
+		if _looks_like_explanation_request(combined):
+			parts.append(
+				"Main chat mode: the student asked for explanation. Give a clear, direct explanation first. "
+				"Then add one practical hint. Do not force code fixes unless requested."
+			)
+		else:
+			parts.append(
+				"Main chat mode: answer the student's intent directly. "
+				"If conceptual, explain. If debugging is requested, guide step-by-step. "
+				"Only rewrite code when the student explicitly asks for a fix."
+			)
 	return "\n\n".join(parts)
+
+
+def _infer_programming_language(*chunks: str) -> str:
+	combined = "\n".join(chunks).lower()
+	if re.search(r"\bjava\b|public\s+class\s+|system\.out\.println|public\s+static\s+void\s+main", combined):
+		return "Java"
+	if re.search(r"\bpython\b|def\s+\w+\(|print\(|if\s+__name__\s*==\s*['\"]__main__['\"]", combined):
+		return "Python"
+	if re.search(r"\bjavascript\b|\btypescript\b|console\.log|function\s+\w+\(|=>", combined):
+		return "JavaScript"
+	return "Java"
 
 
 def _direct_answer_risk(text: str) -> tuple[bool, str]:
@@ -167,7 +200,7 @@ def _enforce_easy_chat_reply(text: str) -> str:
 	return trimmed
 
 
-def _build_chat_prompt_with_progress(session_id: str, message: str, question: str, student_code: str) -> str:
+def _build_chat_prompt_with_progress(session_id: str, message: str, question: str, student_code: str, chat_mode: str = "main") -> str:
 	with state.BANK_LOCK:
 		_ensure_session_progress(session_id)
 		progress = state.PROGRESS_BY_SESSION.get(session_id)
@@ -202,7 +235,13 @@ def _build_chat_prompt_with_progress(session_id: str, message: str, question: st
 			else:
 				context_parts.append(f"Current question: {cur.item_id} - {cur.title}")
 
-	base = _build_chat_prompt(message, question, student_code)
+	base = _build_chat_prompt(message, question, student_code, chat_mode)
+	language = _infer_programming_language(message, question, student_code, "\n\n".join(context_parts))
+	language_rule = (
+		f"Course language rule: respond in {language} only. "
+		f"All code examples, syntax references, and terminology must be {language}. "
+		"If the student asks for another language, briefly explain and continue in the course language."
+	)
 	if not context_parts:
-		return base
-	return "\n\n".join(context_parts + [base])
+		return "\n\n".join([language_rule, base])
+	return "\n\n".join(context_parts + [language_rule, base])

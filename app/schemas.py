@@ -16,6 +16,7 @@ class ChatRequest(BaseModel):
 	message: str = ""
 	question: str = ""
 	student_code: str = ""
+	chat_mode: str = "main"
 	temperature: float = 0.2
 
 
@@ -100,6 +101,7 @@ class SessionProgress(BaseModel):
 
 
 class SignupRequest(BaseModel):
+	username: str = Field(..., min_length=3, max_length=40)
 	email: str = Field(..., min_length=3)
 	password: str = Field(..., min_length=6)
 
@@ -110,8 +112,18 @@ class LoginRequest(BaseModel):
 
 
 class AuthUser(BaseModel):
+	username: str
 	email: str
 	session_id: str
+
+
+class ChangePasswordRequest(BaseModel):
+	current_password: str = Field(..., min_length=1)
+	new_password: str = Field(..., min_length=6)
+
+
+class UpdateProfileRequest(BaseModel):
+	username: str = Field(..., min_length=3, max_length=40)
 
 
 class AuthResponse(BaseModel):

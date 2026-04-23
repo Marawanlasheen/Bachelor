@@ -30,6 +30,8 @@ from .db import (
 	init_db,
 	list_chat_conversations,
 	list_uploaded_assignments,
+	update_user_password,
+	update_username,
 	upsert_chat_conversation,
 	upsert_uploaded_assignment,
 )
@@ -43,6 +45,7 @@ from .schemas import (
 	ChatResponse,
 	ChatConversationStored,
 	ChatConversationUpsertRequest,
+	ChangePasswordRequest,
 	CompareRequest,
 	CompareResponse,
 	JavaCompileRequest,
@@ -52,6 +55,7 @@ from .schemas import (
 	ResetSessionRequest,
 	SetCurrentRequest,
 	SignupRequest,
+	UpdateProfileRequest,
 	UploadedAssignment,
 	UploadedQuestion,
 )
@@ -86,6 +90,51 @@ def _extract_mentioned_lines(text: str) -> list[int]:
 		except Exception:
 			continue
 	return sorted(lines)
+
+
+def _slugify(text: str) -> str:
+	clean = re.sub(r"[^a-z0-9]+", "-", text.strip().lower())
+	clean = re.sub(r"-{2,}", "-", clean).strip("-")
+	return clean
+
+
+def _derive_topic_label(questions: list[dict[str, str]], fallback: str = "practice") -> str:
+	stopwords = {
+		"the", "and", "with", "from", "that", "this", "write", "program", "create", "implement",
+		"using", "into", "for", "your", "java", "question", "exercise", "assignment", "code",
+	}
+	tokens: list[str] = []
+	for q in questions[:6]:
+		text = f"{q.get('title', '')} {q.get('prompt', '')}".lower()
+		for token in re.findall(r"[a-z]{4,}", text):
+			if token not in stopwords:
+				tokens.append(token)
+	if not tokens:
+		return fallback
+
+	counts: dict[str, int] = {}
+	for token in tokens:
+		counts[token] = counts.get(token, 0) + 1
+	best = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+	return _slugify(best) or fallback
+
+
+def _generate_workspace_name(questions: list[dict[str, str]]) -> str:
+	if not questions:
+		return "uploaded-workspace"
+
+	first_id = str(questions[0].get("id", "")).strip()
+	m = re.match(r"(?i)^E\s*(\d+)\s*[-.]\s*(\d+)$", first_id)
+	if m:
+		return f"pa{m.group(1)}-ex{m.group(2)}"
+
+	m = re.match(r"(?i)^Q\s*(\d+)$", first_id)
+	if m:
+		topic = _derive_topic_label(questions)
+		return f"{topic}-ex{m.group(1)}"
+
+	topic = _derive_topic_label(questions)
+	return f"{topic}-workspace"
 
 
 def _require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict[str, Any]:
@@ -163,13 +212,11 @@ def list_uploaded_assignments_route(user: dict[str, Any] = Depends(_require_user
 
 @app.post("/assignments/upload-pdf", response_model=UploadedAssignment)
 async def upload_assignment_pdf(
-	assignment_name: str = Form(...),
+	assignment_name: str = Form(""),
 	pdf_file: UploadFile = File(...),
 	user: dict[str, Any] = Depends(_require_user),
 ) -> UploadedAssignment:
-	name = assignment_name.strip()
-	if len(name) < 2:
-		raise HTTPException(status_code=400, detail="Assignment name is required")
+	requested_name = assignment_name.strip()
 
 	filename = (pdf_file.filename or "").lower()
 	content_type = (pdf_file.content_type or "").lower()
@@ -179,18 +226,31 @@ async def upload_assignment_pdf(
 	max_pdf_bytes = int(os.getenv("MAX_PDF_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 	pdf_bytes = await pdf_file.read()
 	if not pdf_bytes:
-		raise HTTPException(status_code=400, detail="Uploaded PDF is empty")
+		raise HTTPException(status_code=400, detail="The uploaded file is empty. Please choose a valid PDF and try again.")
 	if len(pdf_bytes) > max_pdf_bytes:
-		raise HTTPException(status_code=413, detail=f"PDF is too large. Max size is {max_pdf_bytes // (1024 * 1024)} MB")
+		raise HTTPException(
+			status_code=413,
+			detail=f"This PDF is too large ({len(pdf_bytes) // (1024 * 1024)} MB). Please upload a file under {max_pdf_bytes // (1024 * 1024)} MB.",
+		)
 
 	try:
 		extracted_text = extract_pdf_text(pdf_bytes)
 	except Exception:
-		raise HTTPException(status_code=400, detail="Failed to parse PDF content")
+		raise HTTPException(
+			status_code=400,
+			detail="We couldn't read text from this PDF. Please upload a text-based PDF (not scanned images).",
+		)
 
 	questions_raw = split_questions_from_text(extracted_text)
 	if not questions_raw:
-		raise HTTPException(status_code=400, detail="No questions were found in the uploaded PDF")
+		raise HTTPException(
+			status_code=400,
+			detail="No questions were detected in this PDF. Please make sure headings like Exercise 1-1 or Question 1 are visible.",
+		)
+
+	name = _generate_workspace_name(questions_raw)
+	if requested_name and len(_slugify(requested_name)) >= 3:
+		name = _slugify(requested_name)
 
 	assignment_id = f"up_{uuid.uuid4().hex[:12]}"
 	questions: list[dict[str, str]] = []
@@ -217,9 +277,11 @@ async def upload_assignment_pdf(
 
 @app.post("/auth/signup", response_model=AuthResponse)
 def auth_signup(payload: SignupRequest) -> AuthResponse:
-	user = create_user(payload.email, payload.password)
+	user, error = create_user(payload.email, payload.password, payload.username)
 	if user is None:
-		raise HTTPException(status_code=409, detail="Email is already registered")
+		if error and "already" in error.lower():
+			raise HTTPException(status_code=409, detail=error)
+		raise HTTPException(status_code=400, detail=error or "Could not create account")
 	with BANK_LOCK:
 		_ensure_session_progress(user["session_id"])
 		progress = _progress_summary(user["session_id"])
@@ -227,7 +289,7 @@ def auth_signup(payload: SignupRequest) -> AuthResponse:
 	return AuthResponse(
 		access_token=token,
 		token_type="bearer",
-		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		user=AuthUser(username=user["username"], email=user["email"], session_id=user["session_id"]),
 		progress=progress,
 	)
 
@@ -244,7 +306,7 @@ def auth_login(payload: LoginRequest) -> AuthResponse:
 	return AuthResponse(
 		access_token=token,
 		token_type="bearer",
-		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		user=AuthUser(username=user["username"], email=user["email"], session_id=user["session_id"]),
 		progress=progress,
 	)
 
@@ -258,7 +320,42 @@ def auth_me(user: dict[str, Any] = Depends(_require_user)) -> AuthResponse:
 	return AuthResponse(
 		access_token=token,
 		token_type="bearer",
-		user=AuthUser(email=user["email"], session_id=user["session_id"]),
+		user=AuthUser(username=user["username"], email=user["email"], session_id=user["session_id"]),
+		progress=progress,
+	)
+
+
+@app.post("/auth/change-password")
+def auth_change_password(payload: ChangePasswordRequest, user: dict[str, Any] = Depends(_require_user)) -> dict[str, str]:
+	ok, message = update_user_password(
+		session_id=user["session_id"],
+		current_password=payload.current_password,
+		new_password=payload.new_password,
+	)
+	if not ok:
+		status_code = 401 if "incorrect" in message.lower() else 400
+		raise HTTPException(status_code=status_code, detail=message)
+	return {"status": "ok", "detail": "Password updated successfully"}
+
+
+@app.patch("/auth/profile", response_model=AuthResponse)
+def auth_update_profile(payload: UpdateProfileRequest, user: dict[str, Any] = Depends(_require_user)) -> AuthResponse:
+	updated_user, error = update_username(user["session_id"], payload.username)
+	if updated_user is None:
+		status_code = 409 if error and "taken" in error.lower() else 400
+		raise HTTPException(status_code=status_code, detail=error or "Could not update profile")
+	with BANK_LOCK:
+		_ensure_session_progress(updated_user["session_id"])
+		progress = _progress_summary(updated_user["session_id"])
+	token = create_access_token(updated_user)
+	return AuthResponse(
+		access_token=token,
+		token_type="bearer",
+		user=AuthUser(
+			username=updated_user["username"],
+			email=updated_user["email"],
+			session_id=updated_user["session_id"],
+		),
 		progress=progress,
 	)
 
@@ -299,6 +396,7 @@ async def compare_models(payload: CompareRequest) -> CompareResponse:
 			message="",
 			question=payload.question,
 			student_code=payload.student_code,
+			chat_mode="main",
 			temperature=payload.temperature,
 		)
 	else:
@@ -314,6 +412,9 @@ async def compare_models(payload: CompareRequest) -> CompareResponse:
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_require_user)) -> ChatResponse:
 	session_id = user["session_id"]
+	chat_mode = payload.chat_mode.strip().lower() if payload.chat_mode else "main"
+	if chat_mode not in {"main", "mini"}:
+		chat_mode = "main"
 	if (
 		not payload.message.strip()
 		and not payload.question.strip()
@@ -390,14 +491,26 @@ async def chat_with_tutor(payload: ChatRequest, user: dict[str, Any] = Depends(_
 		message=payload.message,
 		question=payload.question,
 		student_code=payload.student_code,
+		chat_mode=chat_mode,
 		temperature=payload.temperature,
 	)
 
-	if payload.student_code.strip():
+	if payload.student_code.strip() and chat_mode == "mini":
 		# Compile-only for tutor diagnostics: many student programs require stdin,
 		# and running them without input can produce misleading "runtime" errors.
 		compile_result = compile_java_only(payload.student_code)
 		diagnostics = analyze_java_diagnostics(compile_result)
+		if bool(compile_result.get("compile_success")):
+			raw_result["error_category"] = None
+			raw_result["highlighted_lines"] = []
+			raw_result["diagnostic_summary"] = None
+			return ChatResponse(
+				policy=POLICY_TEXT,
+				session_id=session_id,
+				result=ModelResult(**raw_result),
+				progress=progress,
+			)
+
 		model_hint = str(raw_result.get("response") or "").strip()
 		mentioned_lines = _extract_mentioned_lines(model_hint)
 		selected_lines = mentioned_lines if mentioned_lines else diagnostics["highlighted_lines"]

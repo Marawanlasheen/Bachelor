@@ -2,24 +2,38 @@ import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Resizable } from 're-resizable';
 import Editor from '@monaco-editor/react';
-import { Play, Check } from 'lucide-react';
+import { Play, Check, Sparkles } from 'lucide-react';
 import { Question, ChatMessage } from '../types';
-import { compileJava } from '../api/tutorApi';
+import { chat, compileJava } from '../api/tutorApi';
 
 interface CodeEditorProps {
   question: Question;
+  sessionId: string;
+  questionPrompt: string;
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
   onCodeChange: (questionId: string, code: string) => void;
+  onCheckMyCodeFeedback?: (message: string) => void;
   viewingSolution?: boolean;
   highlightedLines?: number[];
   onCodeEdited?: (editedLines: number[]) => void;
 }
 
-export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSolution, highlightedLines = [], onCodeEdited }: CodeEditorProps) {
+export function CodeEditor({
+  question,
+  sessionId,
+  questionPrompt,
+  onSolutionSubmit,
+  onCodeChange,
+  onCheckMyCodeFeedback,
+  viewingSolution,
+  highlightedLines = [],
+  onCodeEdited,
+}: CodeEditorProps) {
   const [code, setCode] = useState(question.currentCode || question.solution || question.starterCode || '');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingCode, setIsCheckingCode] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(question.chatHistory || []);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
@@ -104,8 +118,31 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
     }
   };
 
+  const handleCheckMyCode = async () => {
+    if (viewingSolution || isCheckingCode) return;
+    try {
+      setIsCheckingCode(true);
+      const res = await chat({
+        sessionId,
+        message: 'Please check my code and tell me if it is likely correct. If not, give one focused hint.',
+        question: questionPrompt,
+        studentCode: code,
+        chatMode: 'mini',
+      });
+      const feedback = (res.result.response ?? '').trim();
+      if (feedback) {
+        onCheckMyCodeFeedback?.(feedback);
+      }
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'Error checking code';
+      onCheckMyCodeFeedback?.(`I couldn't check your code yet. ${errorMessage}`);
+    } finally {
+      setIsCheckingCode(false);
+    }
+  };
+
   const isDarkMode = document.documentElement.classList.contains('dark');
-  const editorTitle = `Coding Workspace - ${question.id}`;
+  const editorTitle = 'Workspace';
 
   return (
     <div className="h-full flex flex-col">
@@ -113,9 +150,9 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.3 }}
-        className="bg-card border-b border-border p-4 flex items-center justify-between"
+        className="bg-card border-b border-border px-4 py-2 flex items-center justify-between"
       >
-        <h3>{editorTitle}</h3>
+        <h3 className="text-sm font-medium">{editorTitle}</h3>
         <div className="flex items-center gap-2 ml-3 w-full justify-end">
           <button
             onClick={handleSubmit}
@@ -133,16 +170,24 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
             <Play className="w-4 h-4" />
             <span className="text-sm">{isRunning ? 'Running...' : 'Run'}</span>
           </button>
+          <button
+            onClick={handleCheckMyCode}
+            disabled={isCheckingCode || viewingSolution}
+            className="px-3 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-secondary/60 transition-all flex items-center gap-2 disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span className="text-sm">{isCheckingCode ? 'Checking...' : 'Check My Code'}</span>
+          </button>
         </div>
       </motion.div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden flex flex-col">
         <Resizable
           defaultSize={{
-            height: '60%',
+            height: '65%',
             width: '100%',
           }}
-          minHeight="30%"
+          minHeight="35%"
           maxHeight="85%"
           enable={{
             top: false,
@@ -207,8 +252,7 @@ export function CodeEditor({ question, onSolutionSubmit, onCodeChange, viewingSo
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.2 }}
-          className="h-full bg-[#1e1e1e] text-gray-100 p-4 overflow-auto"
-          style={{ height: 'calc(100% - 60%)' }}
+          className="flex-1 min-h-[120px] bg-[#1e1e1e] text-gray-100 p-4 overflow-auto"
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-gray-400">Output</span>

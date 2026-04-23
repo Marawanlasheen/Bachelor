@@ -3,9 +3,11 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { AssignmentsList } from './components/AssignmentsList';
 import { AssignmentView } from './components/AssignmentView';
+import { Settings } from './components/Settings';
+import { ToastViewport } from './components/ui/toast';
 import { Assignment, ChatConversation, ChatMessage } from './types';
 import { clearStoredAuth, getStoredAuth, saveStoredAuth, StoredAuth } from './api/session';
-import { login, me, signup } from './api/auth';
+import { changePassword, login, me, signup, updateUsername } from './api/auth';
 import {
   chat,
   deleteChatConversationRemote,
@@ -17,8 +19,9 @@ import {
   setCurrentItem,
   uploadAssignmentPdf,
 } from './api/tutorApi';
+import { toast } from 'sonner';
 
-type View = 'chat' | 'assignments' | 'assignment-detail';
+type View = 'chat' | 'assignments' | 'assignment-detail' | 'settings';
 
 function shortDescription(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
@@ -29,6 +32,18 @@ function shortDescription(prompt: string): string {
 function computeProgressPercent(solved: number, total: number): number {
   if (!total) return 0;
   return Math.round((solved / total) * 100);
+}
+
+function buildStarterCode(questionTitle: string): string {
+  const safeName = (questionTitle || 'Main').replace(/[^A-Za-z0-9_]/g, '') || 'Main';
+  const className = /^[A-Za-z_]/.test(safeName) ? safeName : `Task${safeName}`;
+  return [
+    `public class ${className} {`,
+    '    public static void main(String[] args) {',
+    '        // TODO: implement your solution here',
+    '    }',
+    '}',
+  ].join('\n');
 }
 
 function parseItemId(itemId: string): { pa: number; q: number } | null {
@@ -71,9 +86,10 @@ function clearQuestionDraft(sessionId: string, questionId: string): void {
 export default function App() {
   const [auth, setAuth] = useState<StoredAuth | null>(() => getStoredAuth());
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [usernameInput, setUsernameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const [activeView, setActiveView] = useState<View>('chat');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
@@ -117,7 +133,7 @@ export default function App() {
         prompt: it.prompt,
         difficulty: 'Easy' as const,
         solved: solvedIds.includes(it.item_id),
-        starterCode: '',
+        starterCode: buildStarterCode(it.title),
         currentCode: drafts[it.item_id] ?? '',
         chatHistory: [],
       }));
@@ -166,7 +182,7 @@ export default function App() {
           prompt: q.prompt,
           difficulty: 'Easy' as const,
           solved: false,
-          starterCode: '',
+          starterCode: buildStarterCode(q.title),
           currentCode: drafts[q.id] ?? '',
           chatHistory: [],
         }));
@@ -205,6 +221,7 @@ export default function App() {
         const res = await me(auth.token);
         const refreshed: StoredAuth = {
           token: res.access_token,
+          username: res.user.username,
           email: res.user.email,
           sessionId: res.user.session_id,
         };
@@ -257,27 +274,44 @@ export default function App() {
   }, [sessionId]);
 
   const handleAuthSubmit = async () => {
-    setAuthError('');
+    if (authLoading) return;
+    const username = usernameInput.trim();
     const email = emailInput.trim();
     const password = passwordInput;
+    if (authMode === 'signup' && !username) {
+      toast.error('Please choose a username.');
+      return;
+    }
     if (!email || !password) {
-      setAuthError('Email and password are required.');
+      toast.error('Please enter both email and password.');
       return;
     }
 
     try {
-      const res = authMode === 'signup' ? await signup(email, password) : await login(email, password);
+      setAuthLoading(true);
+      if (authMode === 'signup') {
+        await signup(username, email, password);
+        toast.success('Account created successfully. Please log in to continue.');
+        setAuthMode('login');
+        setPasswordInput('');
+        return;
+      }
+
+      const res = await login(email, password);
       const nextAuth: StoredAuth = {
         token: res.access_token,
+        username: res.user.username,
         email: res.user.email,
         sessionId: res.user.session_id,
       };
       saveStoredAuth(nextAuth);
       setAuth(nextAuth);
       setPasswordInput('');
-      setAuthError('');
+      toast.success(`Welcome back, ${nextAuth.username}.`);
     } catch (e) {
-      setAuthError(e instanceof Error ? e.message : 'Authentication failed');
+      toast.error(e instanceof Error ? e.message : 'Authentication failed. Please try again.');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -292,7 +326,7 @@ export default function App() {
     setActiveView('chat');
   };
 
-  const handleViewChange = (view: 'chat' | 'assignments') => {
+  const handleViewChange = (view: 'chat' | 'assignments' | 'settings') => {
     setActiveView(view);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
@@ -343,6 +377,25 @@ export default function App() {
     await reloadAssignments();
   };
 
+  const handlePasswordChange = async (currentPassword: string, newPassword: string): Promise<string> => {
+    const result = await changePassword({ currentPassword, newPassword });
+    return result.detail || 'Password updated successfully.';
+  };
+
+  const handleUsernameChange = async (nextUsername: string): Promise<string> => {
+    const res = await updateUsername(nextUsername);
+    if (!auth) return 'Profile updated.';
+    const nextAuth: StoredAuth = {
+      token: res.access_token,
+      username: res.user.username,
+      email: res.user.email,
+      sessionId: res.user.session_id,
+    };
+    saveStoredAuth(nextAuth);
+    setAuth(nextAuth);
+    return 'Username updated successfully.';
+  };
+
   const handleAssignmentClick = (id: string) => {
     setSelectedAssignmentId(id);
     setActiveView('assignment-detail');
@@ -370,6 +423,7 @@ export default function App() {
         message: 'Here is my code submission.',
         question: question?.prompt || question?.description || '',
         studentCode: code,
+        chatMode: 'mini',
       });
 
       const solvedIds = res.progress?.solved_ids ?? [];
@@ -454,9 +508,23 @@ export default function App() {
 
   if (!auth) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background p-6">
-        <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-4">
-          <h1 className="text-xl">Student Login</h1>
+      <>
+        <ToastViewport />
+        <div className="h-screen flex items-center justify-center bg-background p-6">
+          <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-4">
+            <h1 className="text-xl">Student Login</h1>
+
+          {authMode === 'signup' ? (
+            <div className="space-y-2">
+              <label className="text-sm">Username</label>
+              <input
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                placeholder="yourname"
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <label className="text-sm">Email</label>
@@ -478,24 +546,26 @@ export default function App() {
               placeholder="At least 6 characters"
             />
           </div>
+            <button
+              onClick={() => void handleAuthSubmit()}
+              disabled={authLoading}
+              className="w-full rounded-md bg-primary text-primary-foreground py-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {authLoading ? (authMode === 'signup' ? 'Creating account...' : 'Logging in...') : authMode === 'signup' ? 'Create account' : 'Login'}
+            </button>
 
-          {authError ? <p className="text-sm text-red-500">{authError}</p> : null}
-
-          <button
-            onClick={() => void handleAuthSubmit()}
-            className="w-full rounded-md bg-primary text-primary-foreground py-2"
-          >
-            {authMode === 'signup' ? 'Create account' : 'Login'}
-          </button>
-
-          <button
-            onClick={() => setAuthMode((prev) => (prev === 'signup' ? 'login' : 'signup'))}
-            className="w-full text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
-          >
-            {authMode === 'signup' ? 'Have an account? Login' : 'New student? Sign up'}
-          </button>
+            <button
+              onClick={() => {
+                setAuthMode((prev) => (prev === 'signup' ? 'login' : 'signup'));
+              }}
+              disabled={authLoading}
+              className="w-full text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
+            >
+              {authMode === 'signup' ? 'Have an account? Login' : 'New student? Sign up'}
+            </button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -514,13 +584,12 @@ export default function App() {
       />
 
       <div className="flex-1 overflow-hidden">
-        <div className="border-b border-border px-4 py-2 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{auth.email}</span>
-        </div>
+        <ToastViewport />
 
         {activeView === 'chat' && (
           <ChatView
             sessionId={sessionId}
+            username={auth.username}
             conversations={chatConversations}
             activeConversationId={activeChatId}
             onConversationsChange={handleChatConversationsChange}
@@ -550,6 +619,17 @@ export default function App() {
             onQuestionReset={handleQuestionReset}
             onToggleQuestionSolved={handleToggleQuestionSolved}
             selectedQuestionId={selectedQuestionId}
+          />
+        )}
+
+        {activeView === 'settings' && auth && (
+          <Settings
+            darkMode={darkMode}
+            username={auth.username}
+            email={auth.email}
+            onDarkModeToggle={() => setDarkMode((prev) => !prev)}
+            onChangePassword={handlePasswordChange}
+            onUpdateUsername={handleUsernameChange}
           />
         )}
       </div>

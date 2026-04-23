@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import uuid
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 import jwt
 from dotenv import load_dotenv
 from passlib.context import CryptContext
-from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, create_engine, delete, insert, select, update
+from sqlalchemy import BigInteger, Column, Integer, MetaData, String, Table, Text, create_engine, delete, insert, inspect, select, text, update
 
 from .schemas import BankProblem, SessionProgress
 
@@ -44,6 +45,7 @@ users_table = Table(
 	"users",
 	metadata,
 	Column("id", Integer, primary_key=True, autoincrement=True),
+	Column("username", String(64), nullable=True, unique=True),
 	Column("email", String(320), nullable=False, unique=True),
 	Column("password_hash", Text, nullable=False),
 	Column("session_id", String(64), nullable=False, unique=True),
@@ -103,6 +105,21 @@ uploaded_assignments_table = Table(
 
 def init_db() -> None:
 	metadata.create_all(engine)
+	inspector = inspect(engine)
+	user_columns = {col.get("name", "") for col in inspector.get_columns("users")}
+	if "username" not in user_columns:
+		with engine.begin() as conn:
+			conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+			rows = conn.execute(select(users_table.c.id, users_table.c.email)).fetchall()
+			for row in rows:
+				m = row._mapping
+				email = str(m.get("email", ""))
+				username = _username_from_email(email)
+				conn.execute(
+					update(users_table)
+					.where(users_table.c.id == int(m["id"]))
+					.values(username=username)
+				)
 
 
 def _hash_password(password: str) -> str:
@@ -113,8 +130,28 @@ def _verify_password(password: str, password_hash: str) -> bool:
 	return _pwd.verify(password, password_hash)
 
 
-def create_user(email: str, password: str) -> dict[str, Any] | None:
+def _username_from_email(email: str) -> str:
+	local = email.split("@", 1)[0].strip().lower()
+	cleaned = re.sub(r"[^a-z0-9._-]", "", local)
+	if len(cleaned) < 3:
+		return "student"
+	return cleaned[:40]
+
+
+def _normalize_username(username: str) -> str:
+	cleaned = re.sub(r"\s+", "", username.strip())
+	cleaned = re.sub(r"[^A-Za-z0-9._-]", "", cleaned)
+	if len(cleaned) < 3:
+		raise ValueError("Username must be at least 3 characters and use only letters, numbers, dot, dash, or underscore")
+	return cleaned[:40]
+
+
+def create_user(email: str, password: str, username: str) -> tuple[dict[str, Any] | None, str | None]:
 	email_norm = email.strip().lower()
+	try:
+		username_norm = _normalize_username(username)
+	except ValueError as exc:
+		return None, str(exc)
 	session_id = "u_" + uuid.uuid4().hex
 	created = _now_ms()
 	password_hash = _hash_password(password)
@@ -124,10 +161,17 @@ def create_user(email: str, password: str) -> dict[str, Any] | None:
 			select(users_table.c.id).where(users_table.c.email == email_norm)
 		).first()
 		if existing:
-			return None
+			return None, "An account with this email already exists"
+
+		existing_username = conn.execute(
+			select(users_table.c.id).where(users_table.c.username == username_norm)
+		).first()
+		if existing_username:
+			return None, "That username is already taken"
 
 		conn.execute(
 			insert(users_table).values(
+				username=username_norm,
 				email=email_norm,
 				password_hash=password_hash,
 				session_id=session_id,
@@ -136,13 +180,18 @@ def create_user(email: str, password: str) -> dict[str, Any] | None:
 		)
 
 		row = conn.execute(
-			select(users_table.c.id, users_table.c.email, users_table.c.session_id).where(users_table.c.email == email_norm)
+			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id).where(users_table.c.email == email_norm)
 		).first()
 
 	if not row:
-		return None
+		return None, "Failed to create account"
 	m = row._mapping
-	return {"id": int(m["id"]), "email": str(m["email"]), "session_id": str(m["session_id"])}
+	return {
+		"id": int(m["id"]),
+		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
+		"email": str(m["email"]),
+		"session_id": str(m["session_id"]),
+	}, None
 
 
 def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
@@ -151,6 +200,7 @@ def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
 		row = conn.execute(
 			select(
 				users_table.c.id,
+				users_table.c.username,
 				users_table.c.email,
 				users_table.c.session_id,
 				users_table.c.password_hash,
@@ -161,18 +211,92 @@ def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
 	m = row._mapping
 	if not _verify_password(password, str(m["password_hash"])):
 		return None
-	return {"id": int(m["id"]), "email": str(m["email"]), "session_id": str(m["session_id"])}
+	return {
+		"id": int(m["id"]),
+		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
+		"email": str(m["email"]),
+		"session_id": str(m["session_id"]),
+	}
 
 
 def get_user_by_session_id(session_id: str) -> dict[str, Any] | None:
 	with engine.begin() as conn:
 		row = conn.execute(
-			select(users_table.c.id, users_table.c.email, users_table.c.session_id).where(users_table.c.session_id == session_id)
+			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id).where(users_table.c.session_id == session_id)
 		).first()
 	if not row:
 		return None
 	m = row._mapping
-	return {"id": int(m["id"]), "email": str(m["email"]), "session_id": str(m["session_id"])}
+	return {
+		"id": int(m["id"]),
+		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
+		"email": str(m["email"]),
+		"session_id": str(m["session_id"]),
+	}
+
+
+def update_user_password(session_id: str, current_password: str, new_password: str) -> tuple[bool, str]:
+	if len(new_password or "") < 6:
+		return False, "New password must be at least 6 characters"
+
+	with engine.begin() as conn:
+		row = conn.execute(
+			select(users_table.c.id, users_table.c.password_hash).where(users_table.c.session_id == session_id)
+		).first()
+		if not row:
+			return False, "Account not found"
+
+		password_hash = str(row._mapping.get("password_hash", ""))
+		if not _verify_password(current_password, password_hash):
+			return False, "Current password is incorrect"
+
+		conn.execute(
+			update(users_table)
+			.where(users_table.c.session_id == session_id)
+			.values(password_hash=_hash_password(new_password))
+		)
+
+	return True, "Password updated"
+
+
+def update_username(session_id: str, username: str) -> tuple[dict[str, Any] | None, str | None]:
+	try:
+		username_norm = _normalize_username(username)
+	except ValueError as exc:
+		return None, str(exc)
+
+	with engine.begin() as conn:
+		taken = conn.execute(
+			select(users_table.c.id)
+			.where(users_table.c.username == username_norm)
+			.where(users_table.c.session_id != session_id)
+		).first()
+		if taken:
+			return None, "That username is already taken"
+
+		updated = conn.execute(
+			update(users_table)
+			.where(users_table.c.session_id == session_id)
+			.values(username=username_norm)
+		)
+		if int(updated.rowcount or 0) == 0:
+			return None, "Account not found"
+
+		row = conn.execute(
+			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id)
+			.where(users_table.c.session_id == session_id)
+		).first()
+
+	if not row:
+		return None, "Account not found"
+
+	m = row._mapping
+	return {
+		"id": int(m["id"]),
+		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
+		"email": str(m["email"]),
+		"session_id": str(m["session_id"]),
+	}, None
 
 
 def create_access_token(user: dict[str, Any]) -> str:

@@ -1,4 +1,4 @@
-import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Trash2 } from 'lucide-react';
+import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Settings as SettingsIcon, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatConversation } from '../types';
 import {
@@ -21,7 +21,7 @@ import {
 
 interface SidebarProps {
   activeView: string;
-  onViewChange: (view: 'chat' | 'assignments') => void;
+  onViewChange: (view: 'chat' | 'assignments' | 'settings') => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   recents: ChatConversation[];
@@ -50,6 +50,7 @@ export function Sidebar({
   const normalizedView = ['assignment-detail'].includes(activeView)
     ? 'assignments'
     : activeView;
+  const isSettingsActive = normalizedView === 'settings';
 
   return (
     <motion.div
@@ -173,6 +174,31 @@ export function Sidebar({
       </nav>
 
       <div className="p-4 border-t border-border">
+        <button
+          onClick={() => onViewChange('settings')}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg mb-2 transition-all ${
+            isSettingsActive
+              ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20'
+              : 'text-foreground hover:bg-secondary/50'
+          }`}
+          title={isCollapsed ? 'Settings' : undefined}
+        >
+          <SettingsIcon className="w-5 h-5 flex-shrink-0" />
+          <AnimatePresence>
+            {!isCollapsed && (
+              <motion.span
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2 }}
+                className="truncate"
+              >
+                Settings
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <button

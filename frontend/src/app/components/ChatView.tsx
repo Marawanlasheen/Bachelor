@@ -13,6 +13,7 @@ const DEFAULT_MESSAGE: ChatMessage = {
 
 interface ChatViewProps {
   sessionId: string;
+  username: string;
   conversations: ChatConversation[];
   activeConversationId: string | null;
   onConversationsChange: (nextConversations: ChatConversation[], nextActiveId: string | null) => void;
@@ -21,8 +22,29 @@ interface ChatViewProps {
 
 function summarizeTitle(message: string): string {
   const normalized = message.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= 40) return normalized;
-  return `${normalized.slice(0, 37)}...`;
+  if (!normalized) return 'New chat';
+
+  const cleaned = normalized
+    .replace(/^(can you|could you|please|i need help with|help me with)\s+/i, '')
+    .replace(/[?!.]+$/g, '');
+
+  const stopwords = new Set([
+    'the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'about', 'please', 'java', 'code', 'assignment',
+    'exercise', 'problem', 'question',
+  ]);
+
+  const words = cleaned
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !stopwords.has(w))
+    .slice(0, 4);
+
+  if (words.length > 0) {
+    const title = words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+    return title.length <= 44 ? title : `${title.slice(0, 41)}...`;
+  }
+
+  return cleaned.length <= 44 ? cleaned : `${cleaned.slice(0, 41)}...`;
 }
 
 function upsertConversation(conversations: ChatConversation[], nextConversation: ChatConversation): ChatConversation[] {
@@ -32,6 +54,7 @@ function upsertConversation(conversations: ChatConversation[], nextConversation:
 
 export function ChatView({
   sessionId,
+  username,
   conversations,
   activeConversationId,
   onConversationsChange,
@@ -102,7 +125,7 @@ export function ChatView({
 
     try {
       setIsSending(true);
-      const result = await chat({ sessionId, message: userMessage.message });
+      const result = await chat({ sessionId, message: userMessage.message, chatMode: 'main' });
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
@@ -118,10 +141,11 @@ export function ChatView({
 
       onConversationsChange(upsertConversation(conversations, completedConversation), nextConversationId);
     } catch (e) {
+      const friendly = e instanceof Error ? e.message : 'Could not send your message right now.';
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        message: e instanceof Error ? `Error: ${e.message}` : 'Error sending message',
+        message: `I couldn't send that message right now. ${friendly}`,
         timestamp: Date.now(),
       };
 
@@ -147,13 +171,16 @@ export function ChatView({
   if (!hasStartedChat) {
     return (
       <div className="h-full flex flex-col bg-background items-center justify-center">
+        <div className="absolute top-4 right-6 text-sm text-muted-foreground">
+          {`Hello, ${username}`}
+        </div>
         <motion.div
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3 }}
-          className="w-full max-w-3xl px-8"
+          className="w-full max-w-3xl px-8 text-center"
         >
-      <h1 className="mb-6 text-left pl-2">What should we debug together today</h1>
+          <h1 className="mb-6 text-center">What should we debug together today?</h1>
 
           <div className="flex gap-3 items-end">
             <textarea
@@ -182,7 +209,8 @@ export function ChatView({
   return (
     <div className="h-full flex flex-col bg-background">
       <div className="border-b border-border bg-card px-6 py-3">
-        <div className="w-full flex justify-end">
+        <div className="w-full flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">{`Hello, ${username}`}</p>
           <button
             onClick={onNewChat}
             className="px-3 py-1.5 rounded-md border border-border text-sm hover:bg-secondary/60 transition-colors"

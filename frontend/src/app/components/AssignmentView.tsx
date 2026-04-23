@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Eye, MessageCircle, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, MessageCircle, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Resizable } from 're-resizable';
@@ -35,21 +35,72 @@ export function AssignmentView({
   const [chatPanelWidth, setChatPanelWidth] = useState(384);
   const [showSolutionDialog, setShowSolutionDialog] = useState(false);
   const [highlightedLines, setHighlightedLines] = useState<number[]>([]);
-  const selectedQuestion = assignment.questions.find(q => q.id === selectedQuestionId);
+  const [checkMyCodeMessage, setCheckMyCodeMessage] = useState<{ id: string; text: string } | null>(null);
+
+  const selectedQuestion = assignment.questions.find((q) => q.id === selectedQuestionId);
+
+  const paIdentifier = (() => {
+    const m = assignment.title.match(/PA\s*\d+/i);
+    return m ? m[0].toUpperCase().replace(/\s+/, '') : assignment.title;
+  })();
+
+  const sanitizeExerciseText = (raw: string) => {
+    const lines = (raw || '').split('\n');
+    const filtered = lines.filter((line) => {
+      const lower = line.toLowerCase();
+      if (/(download\s+.*\.zip|open\s+jcreator|jcreator\b|to\s+be\s+discussed)/i.test(lower)) {
+        return false;
+      }
+      return true;
+    });
+
+    const joined = filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!joined) {
+      return 'Read the task carefully, write the Java solution in the workspace, run it, and then use Check My Code for quick feedback.';
+    }
+    return joined;
+  };
+
+  const renderExercisePrompt = (raw: string) => {
+    const text = sanitizeExerciseText(raw);
+    const paragraphs = text.split(/\n\n+/).filter(Boolean);
+    const keywordRe = /\b(Task|Input|Output|Constraints|Example|Examples|Note|Hint|Steps)\b:?/gi;
+
+    return (
+      <div className="space-y-4 text-[15px] leading-7 text-foreground">
+        {paragraphs.map((paragraph, idx) => {
+          const withKeywords = paragraph.replace(keywordRe, '##$1##');
+          const segments = withKeywords.split(/(##[^#]+##|`[^`]+`)/g).filter(Boolean);
+          return (
+            <p key={idx} className="whitespace-pre-wrap">
+              {segments.map((segment, sidx) => {
+                if (segment.startsWith('##') && segment.endsWith('##')) {
+                  return (
+                    <span key={sidx} className="font-semibold text-foreground">
+                      {segment.slice(2, -2)}
+                    </span>
+                  );
+                }
+                if (segment.startsWith('`') && segment.endsWith('`')) {
+                  return (
+                    <code key={sidx} className="px-1.5 py-0.5 rounded bg-secondary font-mono text-sm">
+                      {segment.slice(1, -1)}
+                    </code>
+                  );
+                }
+                return <span key={sidx}>{segment}</span>;
+              })}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
 
   useEffect(() => {
     setHighlightedLines([]);
+    setCheckMyCodeMessage(null);
   }, [selectedQuestionId]);
-
-  const codingTitle = selectedQuestion ? `Coding Challenge ${selectedQuestion.id}` : 'Coding Challenge';
-
-  const handleViewSolutionClick = () => {
-    if (!viewingSolution) {
-      setShowSolutionDialog(true);
-    } else {
-      setViewingSolution(false);
-    }
-  };
 
   const handleConfirmViewSolution = () => {
     setViewingSolution(true);
@@ -57,17 +108,8 @@ export function AssignmentView({
   };
 
   const handleTakeHint = () => {
-    // TODO: Implement hint functionality
     setShowSolutionDialog(false);
     alert('Hint feature coming soon!');
-  };
-
-  const handleReset = () => {
-    if (selectedQuestion && window.confirm('Reset this question? Your code will be cleared and you can start fresh.')) {
-      onQuestionReset(selectedQuestion.id);
-      setViewingSolution(false);
-      setHighlightedLines([]);
-    }
   };
 
   const handleTutorResult = (result: TutorModelResult) => {
@@ -80,6 +122,13 @@ export function AssignmentView({
     setHighlightedLines((prev) => prev.filter((line) => !editedSet.has(line)));
   };
 
+  const handleCheckMyCodeFeedback = (message: string) => {
+    const text = message.trim();
+    if (!text) return;
+    setChatPanelOpen(true);
+    setCheckMyCodeMessage({ id: `${Date.now()}`, text });
+  };
+
   if (!selectedQuestion) {
     return (
       <div className="h-full flex flex-col bg-background">
@@ -89,21 +138,16 @@ export function AssignmentView({
           transition={{ duration: 0.3 }}
           className="bg-card border-b border-border p-6"
         >
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/30 rounded-lg px-2 py-1 mb-4 transition-all"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back to Assignments</span>
-          </button>
-
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="mb-2">{assignment.title}</h1>
-              <p className="text-muted-foreground">
-                {assignment.questions.filter(q => q.solved).length}/{assignment.questions.length} problems completed
-              </p>
-            </div>
+          <div className="grid grid-cols-3 items-center">
+            <button
+              onClick={onBack}
+              className="justify-self-start flex items-center gap-2 text-muted-foreground hover:text-foreground hover:bg-secondary/30 rounded-lg px-2 py-1 transition-all"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back to Assignments</span>
+            </button>
+            <h1 className="justify-self-center">{paIdentifier}</h1>
+            <div />
           </div>
         </motion.div>
 
@@ -144,7 +188,10 @@ export function AssignmentView({
                     className="w-full p-4 rounded-lg border border-border hover:bg-secondary/30 hover:shadow-md transition-all"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3 flex-1 cursor-pointer" onClick={() => onQuestionSelect(question.id)}>
+                      <div
+                        className="flex items-start gap-3 flex-1 cursor-pointer"
+                        onClick={() => onQuestionSelect(question.id)}
+                      >
                         <div className="flex-1">
                           <h4 className="mb-1">{question.title}</h4>
                           <p className="text-sm text-muted-foreground">{question.description}</p>
@@ -203,16 +250,12 @@ export function AssignmentView({
                 <CheckCircle2 className="w-4 h-4 text-success" />
                 <span className="text-sm">Solved</span>
               </div>
-              {/* <button
-                onClick={handleViewSolutionClick}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-secondary hover:bg-secondary/70 transition-colors"
-              >
-                <Eye className="w-4 h-4" />
-                {viewingSolution ? 'Hide Solution' : 'View Solution'}
-              </button> */}
 
               {showSolutionDialog && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSolutionDialog(false)}>
+                <div
+                  className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+                  onClick={() => setShowSolutionDialog(false)}
+                >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -277,8 +320,7 @@ export function AssignmentView({
               transition={{ duration: 0.3, delay: 0.1 }}
               className="bg-card border-b border-border p-6 overflow-y-auto h-full"
             >
-			  <h2 className="mb-3">{codingTitle}</h2>
-			  <p className="text-muted-foreground mb-4 whitespace-pre-line leading-8">{selectedQuestion.prompt || selectedQuestion.description}</p>
+              {renderExercisePrompt(selectedQuestion.prompt || selectedQuestion.description)}
 
               {selectedQuestion.examples && (
                 <div className="space-y-3">
@@ -312,8 +354,11 @@ export function AssignmentView({
           >
             <CodeEditor
               question={selectedQuestion}
+              sessionId={sessionId}
+              questionPrompt={selectedQuestion.prompt || selectedQuestion.description}
               onSolutionSubmit={onSolutionSubmit}
               onCodeChange={onCodeChange}
+              onCheckMyCodeFeedback={handleCheckMyCodeFeedback}
               viewingSolution={viewingSolution}
               highlightedLines={highlightedLines}
               onCodeEdited={handleCodeEdited}
@@ -353,6 +398,7 @@ export function AssignmentView({
                 currentCode={selectedQuestion.currentCode || selectedQuestion.solution || selectedQuestion.starterCode || ''}
                 chatHistory={selectedQuestion.chatHistory || []}
                 viewingHistory={viewingSolution}
+                injectedAssistantMessage={checkMyCodeMessage}
                 onClose={() => setChatPanelOpen(false)}
                 onTutorResult={handleTutorResult}
               />

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { FileText, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Assignment } from '../types';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -23,13 +24,11 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
   const [assignmentName, setAssignmentName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetUploadState = () => {
     setAssignmentName('');
     setSelectedFile(null);
-    setUploadError('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -37,23 +36,19 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
 
   const handleUploadSubmit = async () => {
     if (!selectedFile) {
-      setUploadError('Please choose a PDF file.');
+      toast.error('Please choose a PDF file to upload.');
       return;
     }
     const trimmedName = assignmentName.trim();
-    if (!trimmedName) {
-      setUploadError('Please enter an assignment title.');
-      return;
-    }
 
     try {
       setUploading(true);
-      setUploadError('');
       await onUploadPdf(selectedFile, trimmedName);
+      toast.success('PDF uploaded. Workspace created successfully.');
       setUploadOpen(false);
       resetUploadState();
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Upload failed');
+      toast.error(e instanceof Error ? e.message : 'Upload failed. Please try again with a different PDF.');
     } finally {
       setUploading(false);
     }
@@ -93,17 +88,17 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
                 <DialogHeader>
                   <DialogTitle>Upload Assignment PDF</DialogTitle>
                   <DialogDescription>
-                    Provide a custom assignment title and choose a PDF to extract questions.
+                    Upload your PDF and we will generate a clean workspace name from its content.
                   </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4 py-2">
                   <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Assignment Title</label>
+                    <label className="text-sm text-muted-foreground">Workspace Name Override (optional)</label>
                     <input
                       value={assignmentName}
                       onChange={(e) => setAssignmentName(e.target.value)}
-                      placeholder="Test Assignment"
+                      placeholder="Leave blank to auto-generate"
                       className="w-full rounded-md border border-border bg-background px-3 py-2"
                     />
                   </div>
@@ -121,8 +116,6 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
                       <p className="text-xs text-muted-foreground truncate">Selected: {selectedFile.name}</p>
                     )}
                   </div>
-
-                  {uploadError ? <p className="text-sm text-red-500">{uploadError}</p> : null}
                 </div>
 
                 <DialogFooter>
@@ -166,7 +159,11 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
                 transition={{ duration: 0.4, delay: index * 0.05 }}
                 className="bg-card rounded-xl border border-border overflow-hidden hover:bg-secondary/30 hover:shadow-xl transition-all"
               >
-                <div className="p-6">
+                <button
+                  type="button"
+                  onClick={() => onAssignmentClick(assignment.id)}
+                  className="w-full text-left p-6 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <motion.div
@@ -200,13 +197,10 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => onAssignmentClick(assignment.id)}
-                    className="w-full py-2.5 px-4 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all"
-                  >
+                  <div className="w-full py-2.5 px-4 rounded-lg bg-primary text-primary-foreground text-center">
                     {isComplete ? 'Review Assignment' : 'Continue Assignment'}
-                  </button>
-                </div>
+                  </div>
+                </button>
               </motion.div>
             );
           })}

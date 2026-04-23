@@ -11,6 +11,7 @@ interface ChatPanelProps {
   currentCode?: string;
   chatHistory?: ChatMessage[];
   viewingHistory?: boolean;
+  injectedAssistantMessage?: { id: string; text: string } | null;
   onClose?: () => void;
   onTutorResult?: (result: TutorModelResult) => void;
 }
@@ -22,7 +23,17 @@ const DEFAULT_MESSAGE: ChatMessage = {
   timestamp: Date.now(),
 };
 
-export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode = '', chatHistory = [], viewingHistory = false, onClose, onTutorResult }: ChatPanelProps) {
+export function ChatPanel({
+  sessionId,
+  questionId,
+  questionPrompt,
+  currentCode = '',
+  chatHistory = [],
+  viewingHistory = false,
+  injectedAssistantMessage,
+  onClose,
+  onTutorResult,
+}: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_MESSAGE]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -51,6 +62,21 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode =
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!injectedAssistantMessage?.id || !injectedAssistantMessage.text.trim() || viewingHistory) return;
+
+    const aiMessage: ChatMessage = {
+      id: `check-${injectedAssistantMessage.id}`,
+      sender: 'ai',
+      message: injectedAssistantMessage.text,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => {
+      if (prev.some((msg) => msg.id === aiMessage.id)) return prev;
+      return [...prev, aiMessage];
+    });
+  }, [injectedAssistantMessage, viewingHistory]);
+
   const handleSend = async () => {
     if (!input.trim() || viewingHistory) return;
     if (isSending) return;
@@ -72,6 +98,7 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode =
         message: userMessage.message,
         question: questionPrompt ?? '',
         studentCode: currentCode,
+        chatMode: 'mini',
       });
       const modelText = (result.result.response ?? '').trim();
       const visibleMessage = modelText || `Model call failed: ${result.result.error ?? result.result.direct_answer_reason ?? 'unknown error'}`;
@@ -84,10 +111,11 @@ export function ChatPanel({ sessionId, questionId, questionPrompt, currentCode =
       setMessages((prev) => [...prev, aiMessage]);
       onTutorResult?.(result.result);
     } catch (e) {
+      const friendly = e instanceof Error ? e.message : 'Could not send your message right now.';
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        message: e instanceof Error ? `Error: ${e.message}` : 'Error sending message',
+        message: `I couldn't process that yet. ${friendly}`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, aiMessage]);

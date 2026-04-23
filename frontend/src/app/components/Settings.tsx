@@ -1,160 +1,169 @@
-import { ArrowLeft, Moon, Sun, Bell, Globe } from 'lucide-react';
+import { Moon, Sun } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useState } from 'react';
+import { toast } from 'sonner';
 
 interface SettingsProps {
   darkMode: boolean;
+  username: string;
+  email: string;
   onDarkModeToggle: () => void;
-  onBack: () => void;
+  onChangePassword: (currentPassword: string, newPassword: string) => Promise<string>;
+  onUpdateUsername: (username: string) => Promise<string>;
 }
 
-export function Settings({ darkMode, onDarkModeToggle, onBack }: SettingsProps) {
+export function Settings({
+  darkMode,
+  username,
+  email,
+  onDarkModeToggle,
+  onChangePassword,
+  onUpdateUsername,
+}: SettingsProps) {
+  const [usernameInput, setUsernameInput] = useState(username);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  const [passwordSaving, setPasswordSaving] = useState(false);
+
+  const handleUsernameSave = async () => {
+    if (profileSaving) return;
+    const nextUsername = usernameInput.trim();
+    if (!nextUsername) {
+      toast.error('Username cannot be empty.');
+      return;
+    }
+
+    try {
+      setProfileSaving(true);
+      const msg = await onUpdateUsername(nextUsername);
+      toast.success(msg || 'Username updated successfully.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update your username right now.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handlePasswordSave = async () => {
+    if (passwordSaving) return;
+    if (!currentPassword || !newPassword) {
+      toast.error('Please provide your current password and a new password.');
+      return;
+    }
+
+    try {
+      setPasswordSaving(true);
+      const msg = await onChangePassword(currentPassword, newPassword);
+      toast.success(msg || 'Password updated successfully.');
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update your password right now.');
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div className="h-full overflow-y-auto bg-background p-8">
       <motion.div
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.3 }}
-        className="border-b border-border bg-card"
+        className="mb-8"
       >
-        <div className="p-6 flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="p-2 hover:bg-accent rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1>Settings</h1>
-            <p className="text-sm text-muted-foreground">Manage your preferences</p>
-          </div>
-        </div>
+        <h1 className="mb-2">Settings</h1>
+        <p className="text-muted-foreground">Manage account and appearance</p>
       </motion.div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-          className="max-w-2xl mx-auto space-y-6"
-        >
-          <div>
-            <h3 className="mb-4">Appearance</h3>
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.15 }}
-              className="bg-card border border-border rounded-xl p-5"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-lg bg-secondary">
-                    {darkMode ? (
-                      <Moon className="w-6 h-6 text-primary" />
-                    ) : (
-                      <Sun className="w-6 h-6 text-primary" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-medium">Theme</p>
-                    <p className="text-sm text-muted-foreground">
-                      {darkMode ? 'Light mode' : 'Dark mode'}
-                    </p>
-                  </div>
-                </div>
+      <div>
+        <div className="max-w-2xl mx-auto space-y-6">
+          <section className="bg-card border border-border rounded-xl p-5 space-y-4">
+            <h3>Account</h3>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Email</label>
+              <input
+                value={email}
+                disabled
+                className="w-full rounded-md border border-border bg-secondary/40 px-3 py-2 text-muted-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Username</label>
+              <div className="flex gap-2">
+                <input
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  className="flex-1 rounded-md border border-border bg-background px-3 py-2"
+                  placeholder="yourname"
+                />
                 <button
-                  onClick={onDarkModeToggle}
-                  className={`relative w-14 h-8 rounded-full transition-colors ${
-                    darkMode ? 'bg-primary' : 'bg-muted'
-                  }`}
+                  type="button"
+                  onClick={() => void handleUsernameSave()}
+                  disabled={profileSaving}
+                  className="px-4 py-2 rounded-md bg-primary text-primary-foreground disabled:opacity-60"
                 >
-                  <motion.div
-                    layout
-                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-lg ${
-                      darkMode ? 'left-7' : 'left-1'
-                    }`}
-                  />
+                  {profileSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
-            </motion.div>
-          </div>
+            </div>
+          </section>
 
-          <div>
-            <h3 className="mb-4">Notifications</h3>
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.2 }}
-              className="bg-card border border-border rounded-xl p-5 space-y-4"
+          <section className="bg-card border border-border rounded-xl p-5 space-y-4">
+            <h3>Change Password</h3>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Current Password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">New Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void handlePasswordSave()}
+              disabled={passwordSaving}
+              className="px-4 py-2 rounded-md bg-primary text-primary-foreground disabled:opacity-60"
             >
-              {[
-                { label: 'Assignment Reminders', description: 'Get notified about upcoming deadlines' },
-                { label: 'New Content', description: 'Alerts when new lectures are available' },
-                { label: 'Achievement Unlocked', description: 'Celebrate your milestones' },
-              ].map((item, index) => (
-                <motion.div
-                  key={item.label}
-                  initial={{ x: -20, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ duration: 0.3, delay: 0.25 + index * 0.05 }}
-                  className="flex items-center justify-between pb-4 border-b border-border last:border-0 last:pb-0"
-                >
-                  <div className="flex items-center gap-4">
-                    <Bell className="w-5 h-5 text-muted-foreground" />
-                    <div>
-                      <p className="font-medium text-sm">{item.label}</p>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                  </div>
-                  <button
-                    className="relative w-12 h-6 rounded-full bg-primary"
-                  >
-                    <div className="absolute top-0.5 left-6 w-5 h-5 bg-white rounded-full shadow-lg" />
-                  </button>
-                </motion.div>
-              ))}
-            </motion.div>
-          </div>
+              {passwordSaving ? 'Updating...' : 'Update Password'}
+            </button>
+          </section>
 
-          <div>
-            <h3 className="mb-4">General</h3>
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ duration: 0.3, delay: 0.35 }}
-              className="bg-card border border-border rounded-xl p-5 space-y-4"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Globe className="w-5 h-5 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-sm">Language</p>
-                    <p className="text-xs text-muted-foreground">Choose your preferred language</p>
-                  </div>
+          <section className="bg-card border border-border rounded-xl p-5">
+            <h3 className="mb-4">Appearance</h3>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-secondary">
+                  {darkMode ? <Moon className="w-6 h-6 text-primary" /> : <Sun className="w-6 h-6 text-primary" />}
                 </div>
-                <select className="bg-secondary border border-border rounded-lg px-4 py-2 text-sm">
-                  <option>English</option>
-                  <option>Spanish</option>
-                  <option>French</option>
-                </select>
+                <div>
+                  <p className="font-medium">Theme</p>
+                  <p className="text-sm text-muted-foreground">{darkMode ? 'Dark mode on' : 'Dark mode off'}</p>
+                </div>
               </div>
-            </motion.div>
-          </div>
-
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.3, delay: 0.4 }}
-            className="bg-card border border-border rounded-xl p-5"
-          >
-            <p className="text-sm text-muted-foreground text-center">
-              CS Java Course Platform v1.0.0
-            </p>
-            <p className="text-xs text-muted-foreground text-center mt-2">
-              © 2026 University. All rights reserved.
-            </p>
-          </motion.div>
-        </motion.div>
+              <button
+                onClick={onDarkModeToggle}
+                className={`relative w-14 h-8 rounded-full transition-colors ${darkMode ? 'bg-primary' : 'bg-muted'}`}
+              >
+                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-lg ${darkMode ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

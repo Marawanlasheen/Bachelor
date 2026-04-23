@@ -1,9 +1,11 @@
 export interface AuthUser {
+  username: string;
   email: string;
   session_id: string;
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const AUTH_REQUEST_TIMEOUT_MS = 15000;
 
 function apiUrl(path: string): string {
   return API_BASE ? `${API_BASE}${path}` : path;
@@ -31,8 +33,33 @@ async function parseJsonOrThrow(response: Response) {
   }
 }
 
-async function postAuth(path: string, payload: { email: string; password: string }): Promise<AuthResponse> {
-  const response = await fetch(apiUrl(path), {
+function normalizeAuthError(message: string): string {
+  const normalized = (message || '').trim();
+  if (!normalized) return 'Something went wrong. Please try again.';
+  if (/already exists|already registered|already taken/i.test(normalized)) return normalized;
+  if (/invalid email or password/i.test(normalized)) return 'Your email or password is incorrect. Please try again.';
+  if (/http\s*401/i.test(normalized)) return 'Your login details were not accepted. Please check and try again.';
+  if (/timed out/i.test(normalized)) return 'Request timed out. Please check your connection and try again.';
+  return normalized;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function postAuth(path: string, payload: { username?: string; email: string; password: string }): Promise<AuthResponse> {
+  const response = await fetchWithTimeout(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -41,14 +68,14 @@ async function postAuth(path: string, payload: { email: string; password: string
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeAuthError(msg));
   }
 
   return (await response.json()) as AuthResponse;
 }
 
-export async function signup(email: string, password: string): Promise<AuthResponse> {
-  return postAuth('/auth/signup', { email, password });
+export async function signup(username: string, email: string, password: string): Promise<AuthResponse> {
+  return postAuth('/auth/signup', { username, email, password });
 }
 
 export async function login(email: string, password: string): Promise<AuthResponse> {
@@ -56,7 +83,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
 }
 
 export async function me(token: string): Promise<AuthResponse> {
-  const response = await fetch(apiUrl('/auth/me'), {
+  const response = await fetchWithTimeout(apiUrl('/auth/me'), {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -66,7 +93,54 @@ export async function me(token: string): Promise<AuthResponse> {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeAuthError(msg));
+  }
+
+  return (await response.json()) as AuthResponse;
+}
+
+export async function changePassword(params: { currentPassword: string; newPassword: string }): Promise<{ detail: string }> {
+  const token = localStorage.getItem('tutor_auth_token');
+  if (!token) throw new Error('Please log in again before updating your password.');
+
+  const response = await fetchWithTimeout(apiUrl('/auth/change-password'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      current_password: params.currentPassword,
+      new_password: params.newPassword,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : 'Could not update password.';
+    throw new Error(normalizeAuthError(msg));
+  }
+
+  return (await response.json()) as { detail: string };
+}
+
+export async function updateUsername(username: string): Promise<AuthResponse> {
+  const token = localStorage.getItem('tutor_auth_token');
+  if (!token) throw new Error('Please log in again before updating your profile.');
+
+  const response = await fetchWithTimeout(apiUrl('/auth/profile'), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ username }),
+  });
+
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : 'Could not update username.';
+    throw new Error(normalizeAuthError(msg));
   }
 
   return (await response.json()) as AuthResponse;

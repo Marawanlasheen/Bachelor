@@ -90,6 +90,21 @@ async function parseJsonOrThrow(response: Response) {
   }
 }
 
+function normalizeApiError(message: string, fallback: string): string {
+  const cleaned = (message || '').trim();
+  if (!cleaned) return fallback;
+  if (/authentication required|invalid or expired token|user not found/i.test(cleaned)) {
+    return 'Your session has expired. Please log in again.';
+  }
+  if (/only pdf files are supported/i.test(cleaned)) {
+    return 'Please upload a PDF file. Other file types are not supported.';
+  }
+  if (/couldn\'t read text|no questions were detected/i.test(cleaned)) {
+    return cleaned;
+  }
+  return cleaned;
+}
+
 function authHeader(): Record<string, string> {
   const token = getAuthToken();
   if (!token) {
@@ -103,6 +118,7 @@ export async function chat(params: {
   message?: string;
   question?: string;
   studentCode?: string;
+  chatMode?: 'main' | 'mini';
   temperature?: number;
 }): Promise<TutorChatResponse> {
   const payload = {
@@ -110,6 +126,7 @@ export async function chat(params: {
     message: params.message ?? '',
     question: params.question ?? '',
     student_code: params.studentCode ?? '',
+    chat_mode: params.chatMode ?? 'main',
     temperature: params.temperature ?? 0.2,
   };
 
@@ -122,7 +139,7 @@ export async function chat(params: {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not send your message. Please try again.'));
   }
 
   return (await response.json()) as TutorChatResponse;
@@ -135,7 +152,7 @@ export async function getTrackerStatus(sessionId: string): Promise<{ progress: T
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not load your progress right now.'));
   }
   return (await response.json()) as { progress: TutorProgressSummary };
 }
@@ -149,7 +166,7 @@ export async function setCurrentItem(params: { sessionId: string; itemId: string
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not switch questions right now.'));
   }
   return (await response.json()) as { progress: TutorProgressSummary };
 }
@@ -169,7 +186,7 @@ export async function listUploadedAssignments(): Promise<UploadedAssignment[]> {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not load uploaded assignments.'));
   }
   return (await response.json()) as UploadedAssignment[];
 }
@@ -191,7 +208,7 @@ export async function uploadAssignmentPdf(params: {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'We could not upload your PDF. Please try again.'));
   }
 
   return (await response.json()) as UploadedAssignment;
@@ -204,7 +221,7 @@ export async function listChatConversationsRemote(): Promise<StoredChatConversat
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not load your recent chats.'));
   }
   return (await response.json()) as StoredChatConversation[];
 }
@@ -228,7 +245,7 @@ export async function saveChatConversationRemote(params: {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not save this chat right now.'));
   }
 }
 
@@ -240,7 +257,7 @@ export async function deleteChatConversationRemote(conversationId: string): Prom
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not delete this chat right now.'));
   }
 }
 
@@ -260,7 +277,7 @@ export async function compileJava(params: {
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
-    throw new Error(msg);
+    throw new Error(normalizeApiError(msg, 'Could not run Java compile at the moment.'));
   }
 
   return (await response.json()) as JavaCompileResponse;
