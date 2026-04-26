@@ -3,6 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { AssignmentsList } from './components/AssignmentsList';
 import { AssignmentView } from './components/AssignmentView';
+import { PdfUploadManager } from './components/PdfUploadManager';
 import { Settings } from './components/Settings';
 import { ToastViewport } from './components/ui/toast';
 import { Assignment, ChatConversation, ChatMessage } from './types';
@@ -10,6 +11,7 @@ import { clearStoredAuth, getStoredAuth, saveStoredAuth, StoredAuth } from './ap
 import { changePassword, login, me, signup, updateUsername } from './api/auth';
 import {
   chat,
+  deleteUploadedAssignment,
   deleteChatConversationRemote,
   getTrackerStatus,
   listBankItems,
@@ -17,11 +19,12 @@ import {
   listUploadedAssignments,
   saveChatConversationRemote,
   setCurrentItem,
+  UploadedAssignment,
   uploadAssignmentPdf,
 } from './api/tutorApi';
 import { toast } from 'sonner';
 
-type View = 'chat' | 'assignments' | 'assignment-detail' | 'settings';
+type View = 'chat' | 'assignments' | 'assignment-detail' | 'pdf-upload' | 'settings';
 
 function shortDescription(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
@@ -92,6 +95,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [activeView, setActiveView] = useState<View>('chat');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [uploadedAssignments, setUploadedAssignments] = useState<UploadedAssignment[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
@@ -104,6 +108,7 @@ export default function App() {
   const reloadAssignments = async () => {
     if (!auth || !sessionId) {
       setAssignments([]);
+      setUploadedAssignments([]);
       return;
     }
 
@@ -125,6 +130,7 @@ export default function App() {
       } catch {
         uploadedAssignmentsRaw = [];
       }
+      setUploadedAssignments(uploadedAssignmentsRaw);
 
       const questions = items.map((it) => ({
         id: it.item_id,
@@ -202,6 +208,7 @@ export default function App() {
       setAssignments([...uploadedAssignments, ...sortedAssignments]);
     } catch {
       setAssignments([]);
+      setUploadedAssignments([]);
     }
   };
 
@@ -321,16 +328,17 @@ export default function App() {
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
     setAssignments([]);
+    setUploadedAssignments([]);
     setChatConversations([]);
     setActiveChatId(null);
     setActiveView('chat');
   };
 
-  const handleViewChange = (view: 'chat' | 'assignments' | 'settings') => {
+  const handleViewChange = (view: 'chat' | 'assignments' | 'pdf-upload' | 'settings') => {
     setActiveView(view);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
-    if (view === 'assignments') {
+    if (view === 'assignments' || view === 'pdf-upload') {
       void reloadAssignments();
     }
   };
@@ -374,6 +382,11 @@ export default function App() {
 
   const handleUploadPdf = async (file: File, assignmentName: string) => {
     await uploadAssignmentPdf({ assignmentName, file });
+    await reloadAssignments();
+  };
+
+  const handleDeleteUploadedPdf = async (assignmentId: string) => {
+    await deleteUploadedAssignment(assignmentId);
     await reloadAssignments();
   };
 
@@ -599,9 +612,18 @@ export default function App() {
 
         {activeView === 'assignments' && (
           <AssignmentsList
-            assignments={assignments}
+            assignments={assignments.filter((assignment) => !assignment.id.startsWith('up_'))}
             onAssignmentClick={handleAssignmentClick}
+          />
+        )}
+
+        {activeView === 'pdf-upload' && (
+          <PdfUploadManager
+            assignmentCards={assignments.filter((assignment) => assignment.id.startsWith('up_'))}
+            uploadedAssignments={uploadedAssignments}
             onUploadPdf={handleUploadPdf}
+            onDeleteUploadedAssignment={handleDeleteUploadedPdf}
+            onAssignmentClick={handleAssignmentClick}
           />
         )}
 

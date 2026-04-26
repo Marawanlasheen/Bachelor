@@ -1,4 +1,4 @@
-import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Settings as SettingsIcon, Trash2 } from 'lucide-react';
+import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Settings as SettingsIcon, Trash2, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatConversation } from '../types';
 import {
@@ -21,7 +21,7 @@ import {
 
 interface SidebarProps {
   activeView: string;
-  onViewChange: (view: 'chat' | 'assignments' | 'settings') => void;
+  onViewChange: (view: 'chat' | 'assignments' | 'pdf-upload' | 'settings') => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   recents: ChatConversation[];
@@ -45,6 +45,7 @@ export function Sidebar({
   const menuItems = [
     { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
     { id: 'assignments' as const, label: 'Assignments', icon: FileText },
+    { id: 'pdf-upload' as const, label: 'My Workspaces', icon: Upload },
   ];
 
   const normalizedView = ['assignment-detail'].includes(activeView)

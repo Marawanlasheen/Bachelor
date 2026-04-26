@@ -214,6 +214,19 @@ export async function uploadAssignmentPdf(params: {
   return (await response.json()) as UploadedAssignment;
 }
 
+export async function deleteUploadedAssignment(assignmentId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/assignments/uploaded/${encodeURIComponent(assignmentId)}`), {
+    method: 'DELETE',
+    headers: { ...authHeader() },
+  });
+
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not delete this uploaded PDF.'));
+  }
+}
+
 export async function listChatConversationsRemote(): Promise<StoredChatConversation[]> {
   const response = await fetch(apiUrl('/chat/conversations'), {
     headers: { ...authHeader() },

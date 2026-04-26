@@ -25,6 +25,7 @@ from .db import (
 	create_user,
 	delete_chat_conversation,
 	delete_chat_messages,
+	delete_uploaded_assignment,
 	decode_access_token,
 	get_user_by_session_id,
 	init_db,
@@ -273,6 +274,17 @@ async def upload_assignment_pdf(
 		title=name,
 		questions=[UploadedQuestion(**q) for q in questions],
 	)
+
+
+@app.delete("/assignments/uploaded/{assignment_id}")
+def delete_uploaded_assignment_route(
+	assignment_id: str,
+	user: dict[str, Any] = Depends(_require_user),
+) -> dict[str, str]:
+	deleted = delete_uploaded_assignment(user["session_id"], assignment_id)
+	if not deleted:
+		raise HTTPException(status_code=404, detail="Uploaded assignment not found")
+	return {"status": "ok"}
 
 
 @app.post("/auth/signup", response_model=AuthResponse)

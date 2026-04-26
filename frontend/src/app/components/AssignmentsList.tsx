@@ -1,58 +1,12 @@
-import { useRef, useState } from 'react';
-import { FileText, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Assignment } from '../types';
-import { toast } from 'sonner';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from './ui/dialog';
 
 interface AssignmentsListProps {
   assignments: Assignment[];
   onAssignmentClick: (id: string) => void;
-  onUploadPdf: (file: File, assignmentName: string) => Promise<void>;
 }
 
-export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }: AssignmentsListProps) {
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [assignmentName, setAssignmentName] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const resetUploadState = () => {
-    setAssignmentName('');
-    setSelectedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleUploadSubmit = async () => {
-    if (!selectedFile) {
-      toast.error('Please choose a PDF file to upload.');
-      return;
-    }
-    const trimmedName = assignmentName.trim();
-
-    try {
-      setUploading(true);
-      await onUploadPdf(selectedFile, trimmedName);
-      toast.success('PDF uploaded. Workspace created successfully.');
-      setUploadOpen(false);
-      resetUploadState();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Upload failed. Please try again with a different PDF.');
-    } finally {
-      setUploading(false);
-    }
-  };
+export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsListProps) {
 
   return (
     <div className="h-full overflow-y-auto">
@@ -68,79 +22,6 @@ export function AssignmentsList({ assignments, onAssignmentClick, onUploadPdf }:
               <h1 className="mb-2">Practice Assignments</h1>
               <p className="text-muted-foreground">Solve problems and practice your Java skills</p>
             </div>
-
-            <Dialog
-              open={uploadOpen}
-              onOpenChange={(open) => {
-                setUploadOpen(open);
-                if (!open) {
-                  resetUploadState();
-                }
-              }}
-            >
-              <DialogTrigger asChild>
-                <button className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all whitespace-nowrap">
-                  <Upload className="w-4 h-4" />
-                  Upload PDF
-                </button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Upload Assignment PDF</DialogTitle>
-                  <DialogDescription>
-                    Upload your PDF and we will generate a clean workspace name from its content.
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="space-y-4 py-2">
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">Workspace Name Override (optional)</label>
-                    <input
-                      value={assignmentName}
-                      onChange={(e) => setAssignmentName(e.target.value)}
-                      placeholder="Leave blank to auto-generate"
-                      className="w-full rounded-md border border-border bg-background px-3 py-2"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm text-muted-foreground">PDF File</label>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-                      className="w-full rounded-md border border-border bg-background px-3 py-2"
-                    />
-                    {selectedFile && (
-                      <p className="text-xs text-muted-foreground truncate">Selected: {selectedFile.name}</p>
-                    )}
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUploadOpen(false);
-                      resetUploadState();
-                    }}
-                    className="px-4 py-2 rounded-md border border-border hover:bg-secondary/60 transition-colors"
-                    disabled={uploading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleUploadSubmit}
-                    className="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-all disabled:opacity-60"
-                    disabled={uploading}
-                  >
-                    {uploading ? 'Uploading...' : 'Upload'}
-                  </button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
         </motion.div>
 

@@ -587,3 +587,13 @@ def upsert_uploaded_assignment(
 					updated_at_ms=now_ms,
 				)
 			)
+
+
+def delete_uploaded_assignment(session_id: str, assignment_id: str) -> bool:
+	with engine.begin() as conn:
+		deleted = conn.execute(
+			delete(uploaded_assignments_table)
+			.where(uploaded_assignments_table.c.session_id == session_id)
+			.where(uploaded_assignments_table.c.assignment_id == assignment_id)
+		)
+	return int(deleted.rowcount or 0) > 0
