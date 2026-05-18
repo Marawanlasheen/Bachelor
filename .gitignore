@@ -13,6 +13,7 @@ __pycache__/
 
 # PAS assets (local)
 pas/*.pdf
+uploads/
 
 # Extracted question bank (contains solutions)
 pas_bank.local.json
