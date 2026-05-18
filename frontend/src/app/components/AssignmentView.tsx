@@ -359,6 +359,7 @@ export function AssignmentView({
               onSolutionSubmit={onSolutionSubmit}
               onCodeChange={onCodeChange}
               onCheckMyCodeFeedback={handleCheckMyCodeFeedback}
+              onCheckMyCodeResult={handleTutorResult}
               viewingSolution={viewingSolution}
               highlightedLines={highlightedLines}
               onCodeEdited={handleCodeEdited}

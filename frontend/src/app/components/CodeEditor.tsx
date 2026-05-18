@@ -4,7 +4,7 @@ import { Resizable } from 're-resizable';
 import Editor from '@monaco-editor/react';
 import { Play, Check, Sparkles } from 'lucide-react';
 import { Question, ChatMessage } from '../types';
-import { chat, compileJava } from '../api/tutorApi';
+import { chat, compileJava, TutorModelResult } from '../api/tutorApi';
 
 interface CodeEditorProps {
   question: Question;
@@ -13,6 +13,7 @@ interface CodeEditorProps {
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
   onCodeChange: (questionId: string, code: string) => void;
   onCheckMyCodeFeedback?: (message: string) => void;
+  onCheckMyCodeResult?: (result: TutorModelResult) => void;
   viewingSolution?: boolean;
   highlightedLines?: number[];
   onCodeEdited?: (editedLines: number[]) => void;
@@ -25,6 +26,7 @@ export function CodeEditor({
   onSolutionSubmit,
   onCodeChange,
   onCheckMyCodeFeedback,
+  onCheckMyCodeResult,
   viewingSolution,
   highlightedLines = [],
   onCodeEdited,
@@ -133,6 +135,7 @@ export function CodeEditor({
       if (feedback) {
         onCheckMyCodeFeedback?.(feedback);
       }
+      onCheckMyCodeResult?.(res.result);
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : 'Error checking code';
       onCheckMyCodeFeedback?.(`I couldn't check your code yet. ${errorMessage}`);
