@@ -1,5 +1,11 @@
 .env
 
+# Frontend dependencies/build output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
 # Python
 .venv/
 __pycache__/
