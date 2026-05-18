@@ -69,6 +69,19 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 		)
 		output_text = str(message.content)
 		output_text = _enforce_easy_hint(output_text)
+		if not output_text.strip():
+			return {
+				"provider": provider,
+				"model": model,
+				"response": "ERROR: Model returned an empty response.",
+				"latency_ms": int((time.perf_counter() - start_time) * 1000),
+				"direct_answer_risk": True,
+				"direct_answer_reason": "Model returned empty output",
+				"error_category": None,
+				"highlighted_lines": [],
+				"diagnostic_summary": None,
+				"error": "Empty model response",
+			}
 		latency_ms = int((time.perf_counter() - start_time) * 1000)
 		risk, reason = _direct_answer_risk(output_text)
 		return {
@@ -88,7 +101,7 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 		return {
 			"provider": provider,
 			"model": model,
-			"response": "",
+			"response": "ERROR: Model call failed.",
 			"latency_ms": latency_ms,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "Model call failed",
@@ -113,7 +126,7 @@ async def _run_chat_turn(
 		return {
 			"provider": "groq",
 			"model": model_name,
-			"response": "",
+			"response": "ERROR: GROQ_API_KEY is not set.",
 			"latency_ms": 0,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "GROQ_API_KEY is missing",
@@ -145,6 +158,8 @@ async def _run_chat_turn(
 			output_text = _enforce_easy_hint(raw_text)
 		else:
 			output_text = raw_text if raw_text else _enforce_easy_chat_reply(raw_text)
+		if not output_text.strip():
+			output_text = "ERROR: Model returned an empty response."
 		latency_ms = int((time.perf_counter() - start_time) * 1000)
 		risk, reason = _direct_answer_risk(output_text)
 
@@ -175,7 +190,7 @@ async def _run_chat_turn(
 		return {
 			"provider": "groq",
 			"model": model_name,
-			"response": "",
+			"response": "ERROR: Model call failed.",
 			"latency_ms": latency_ms,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "Model call failed",
@@ -193,7 +208,7 @@ async def _run_groq_only(question: str, student_code: str, temperature: float) -
 		return {
 			"provider": "groq",
 			"model": model_name,
-			"response": "",
+			"response": "ERROR: GROQ_API_KEY is not set.",
 			"latency_ms": 0,
 			"direct_answer_risk": True,
 			"direct_answer_reason": "GROQ_API_KEY is missing",

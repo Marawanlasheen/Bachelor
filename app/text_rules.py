@@ -143,13 +143,6 @@ def _too_specific_hint(text: str) -> bool:
 	return any(re.search(pattern, lowered) for pattern in patterns)
 
 
-def _safe_hint_fallback() -> str:
-	return (
-		"You are close. Check one variable that should keep its value between loop runs. "
-		"Print that value each time and see where it resets."
-	)
-
-
 def _too_complex_for_student(text: str) -> bool:
 	words = re.findall(r"[A-Za-z']+", text)
 	if not words:
@@ -175,15 +168,12 @@ def _too_complex_for_student(text: str) -> bool:
 def _enforce_easy_hint(text: str) -> str:
 	cleaned = " ".join(text.strip().split())
 	if not cleaned:
-		return _safe_hint_fallback()
+		return ""
 
 	sentences = re.split(r"(?<=[.!?])\s+", cleaned)
 	trimmed = " ".join(sentence for sentence in sentences[:4] if sentence)
 	if not trimmed.endswith("?") and "?" not in trimmed:
 		trimmed = f"{trimmed} What is the first variable you would inspect?"
-
-	if _too_specific_hint(trimmed) or _too_complex_for_student(trimmed):
-		return _safe_hint_fallback()
 
 	return trimmed
 
@@ -191,12 +181,10 @@ def _enforce_easy_hint(text: str) -> str:
 def _enforce_easy_chat_reply(text: str) -> str:
 	cleaned = " ".join(text.strip().split())
 	if not cleaned:
-		return _safe_hint_fallback()
+		return ""
 
 	sentences = re.split(r"(?<=[.!?])\s+", cleaned)
 	trimmed = " ".join(sentence for sentence in sentences[:3] if sentence)
-	if _too_complex_for_student(trimmed):
-		return _safe_hint_fallback()
 	return trimmed
 
 
