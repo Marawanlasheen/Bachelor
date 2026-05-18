@@ -49,6 +49,7 @@ users_table = Table(
 	Column("email", String(320), nullable=False, unique=True),
 	Column("password_hash", Text, nullable=False),
 	Column("session_id", String(64), nullable=False, unique=True),
+	Column("role", String(16), nullable=False, default="student"),
 	Column("created_at_ms", BigInteger, nullable=False),
 )
 
@@ -102,6 +103,53 @@ uploaded_assignments_table = Table(
 	Column("updated_at_ms", BigInteger, nullable=False),
 )
 
+courses_table = Table(
+	"courses",
+	metadata,
+	Column("course_id", String(64), primary_key=True),
+	Column("title", Text, nullable=False),
+	Column("description", Text, nullable=False),
+	Column("owner_user_id", Integer, nullable=False),
+	Column("created_at_ms", BigInteger, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+course_items_table = Table(
+	"course_items",
+	metadata,
+	Column("course_id", String(64), primary_key=True),
+	Column("item_id", String(64), primary_key=True),
+	Column("position", Integer, nullable=False),
+	Column("title", Text, nullable=False),
+	Column("prompt", Text, nullable=False),
+	Column("solution_text", Text, nullable=False),
+	Column("source_pdf_id", String(64), nullable=True),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+course_pdfs_table = Table(
+	"course_pdfs",
+	metadata,
+	Column("pdf_id", String(64), primary_key=True),
+	Column("course_id", String(64), nullable=False),
+	Column("owner_user_id", Integer, nullable=False),
+	Column("title", Text, nullable=False),
+	Column("filename", Text, nullable=False),
+	Column("file_path", Text, nullable=False),
+	Column("questions_json", Text, nullable=False),
+	Column("created_at_ms", BigInteger, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
+course_progress_table = Table(
+	"course_progress",
+	metadata,
+	Column("course_id", String(64), primary_key=True),
+	Column("session_id", String(64), primary_key=True),
+	Column("progress_json", Text, nullable=False),
+	Column("updated_at_ms", BigInteger, nullable=False),
+)
+
 
 def init_db() -> None:
 	metadata.create_all(engine)
@@ -120,6 +168,9 @@ def init_db() -> None:
 					.where(users_table.c.id == int(m["id"]))
 					.values(username=username)
 				)
+	if "role" not in user_columns:
+		with engine.begin() as conn:
+			conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(16) DEFAULT 'student'"))
 
 
 def _hash_password(password: str) -> str:
@@ -146,8 +197,11 @@ def _normalize_username(username: str) -> str:
 	return cleaned[:40]
 
 
-def create_user(email: str, password: str, username: str) -> tuple[dict[str, Any] | None, str | None]:
+def create_user(email: str, password: str, username: str, role: str) -> tuple[dict[str, Any] | None, str | None]:
 	email_norm = email.strip().lower()
+	role_norm = role.strip().lower()
+	if role_norm not in {"student", "ta"}:
+		return None, "Invalid role"
 	try:
 		username_norm = _normalize_username(username)
 	except ValueError as exc:
@@ -175,12 +229,19 @@ def create_user(email: str, password: str, username: str) -> tuple[dict[str, Any
 				email=email_norm,
 				password_hash=password_hash,
 				session_id=session_id,
+				role=role_norm,
 				created_at_ms=created,
 			)
 		)
 
 		row = conn.execute(
-			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id).where(users_table.c.email == email_norm)
+			select(
+				users_table.c.id,
+				users_table.c.username,
+				users_table.c.email,
+				users_table.c.session_id,
+				users_table.c.role,
+			).where(users_table.c.email == email_norm)
 		).first()
 
 	if not row:
@@ -191,6 +252,7 @@ def create_user(email: str, password: str, username: str) -> tuple[dict[str, Any
 		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
 		"email": str(m["email"]),
 		"session_id": str(m["session_id"]),
+		"role": str(m.get("role") or "student"),
 	}, None
 
 
@@ -204,6 +266,7 @@ def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
 				users_table.c.email,
 				users_table.c.session_id,
 				users_table.c.password_hash,
+				users_table.c.role,
 			).where(users_table.c.email == email_norm)
 		).first()
 	if not row:
@@ -216,13 +279,20 @@ def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
 		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
 		"email": str(m["email"]),
 		"session_id": str(m["session_id"]),
+		"role": str(m.get("role") or "student"),
 	}
 
 
 def get_user_by_session_id(session_id: str) -> dict[str, Any] | None:
 	with engine.begin() as conn:
 		row = conn.execute(
-			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id).where(users_table.c.session_id == session_id)
+			select(
+				users_table.c.id,
+				users_table.c.username,
+				users_table.c.email,
+				users_table.c.session_id,
+				users_table.c.role,
+			).where(users_table.c.session_id == session_id)
 		).first()
 	if not row:
 		return None
@@ -232,6 +302,7 @@ def get_user_by_session_id(session_id: str) -> dict[str, Any] | None:
 		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
 		"email": str(m["email"]),
 		"session_id": str(m["session_id"]),
+		"role": str(m.get("role") or "student"),
 	}
 
 
@@ -283,7 +354,7 @@ def update_username(session_id: str, username: str) -> tuple[dict[str, Any] | No
 			return None, "Account not found"
 
 		row = conn.execute(
-			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id)
+			select(users_table.c.id, users_table.c.username, users_table.c.email, users_table.c.session_id, users_table.c.role)
 			.where(users_table.c.session_id == session_id)
 		).first()
 
@@ -296,6 +367,7 @@ def update_username(session_id: str, username: str) -> tuple[dict[str, Any] | No
 		"username": str(m.get("username") or _username_from_email(str(m["email"]))),
 		"email": str(m["email"]),
 		"session_id": str(m["session_id"]),
+		"role": str(m.get("role") or "student"),
 	}, None
 
 
@@ -305,6 +377,7 @@ def create_access_token(user: dict[str, Any]) -> str:
 		"sub": user["email"],
 		"sid": user["session_id"],
 		"uid": user["id"],
+		"role": user.get("role", "student"),
 		"iat": now,
 		"exp": now + AUTH_EXPIRE_SECONDS,
 	}
@@ -595,5 +668,469 @@ def delete_uploaded_assignment(session_id: str, assignment_id: str) -> bool:
 			delete(uploaded_assignments_table)
 			.where(uploaded_assignments_table.c.session_id == session_id)
 			.where(uploaded_assignments_table.c.assignment_id == assignment_id)
+		)
+	return int(deleted.rowcount or 0) > 0
+
+
+def create_course(owner_user_id: int, title: str, description: str) -> dict[str, Any]:
+	course_id = "c_" + uuid.uuid4().hex[:12]
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		conn.execute(
+			insert(courses_table).values(
+				course_id=course_id,
+				title=title,
+				description=description,
+				owner_user_id=owner_user_id,
+				created_at_ms=now_ms,
+				updated_at_ms=now_ms,
+			)
+		)
+	return {
+		"id": course_id,
+		"title": title,
+		"description": description,
+		"owner_user_id": owner_user_id,
+		"created_at": now_ms,
+		"updated_at": now_ms,
+	}
+
+
+def list_courses() -> list[dict[str, Any]]:
+	courses: list[dict[str, Any]] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				courses_table.c.course_id,
+				courses_table.c.title,
+				courses_table.c.description,
+				courses_table.c.owner_user_id,
+				courses_table.c.created_at_ms,
+				courses_table.c.updated_at_ms,
+			).order_by(courses_table.c.created_at_ms.desc())
+		).fetchall()
+	for row in rows:
+		m = row._mapping
+		courses.append(
+			{
+				"id": str(m["course_id"]),
+				"title": str(m["title"]),
+				"description": str(m["description"]),
+				"owner_user_id": int(m["owner_user_id"]),
+				"created_at": int(m["created_at_ms"]),
+				"updated_at": int(m["updated_at_ms"]),
+			}
+		)
+	return courses
+
+
+def get_course(course_id: str) -> dict[str, Any] | None:
+	with engine.begin() as conn:
+		row = conn.execute(
+			select(
+				courses_table.c.course_id,
+				courses_table.c.title,
+				courses_table.c.description,
+				courses_table.c.owner_user_id,
+				courses_table.c.created_at_ms,
+				courses_table.c.updated_at_ms,
+			).where(courses_table.c.course_id == course_id)
+		).first()
+	if not row:
+		return None
+	m = row._mapping
+	return {
+		"id": str(m["course_id"]),
+		"title": str(m["title"]),
+		"description": str(m["description"]),
+		"owner_user_id": int(m["owner_user_id"]),
+		"created_at": int(m["created_at_ms"]),
+		"updated_at": int(m["updated_at_ms"]),
+	}
+
+
+def delete_course(course_id: str) -> bool:
+	with engine.begin() as conn:
+		conn.execute(delete(course_items_table).where(course_items_table.c.course_id == course_id))
+		conn.execute(delete(course_pdfs_table).where(course_pdfs_table.c.course_id == course_id))
+		conn.execute(delete(course_progress_table).where(course_progress_table.c.course_id == course_id))
+		deleted = conn.execute(delete(courses_table).where(courses_table.c.course_id == course_id))
+	return int(deleted.rowcount or 0) > 0
+
+
+def list_course_items(course_id: str) -> list[BankProblem]:
+	items: list[BankProblem] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				course_items_table.c.item_id,
+				course_items_table.c.title,
+				course_items_table.c.prompt,
+				course_items_table.c.solution_text,
+			)
+			.where(course_items_table.c.course_id == course_id)
+			.order_by(course_items_table.c.position.asc(), course_items_table.c.item_id.asc())
+		).fetchall()
+	for row in rows:
+		m = row._mapping
+		try:
+			items.append(
+				BankProblem(
+					item_id=str(m["item_id"]),
+					title=str(m["title"]),
+					prompt=str(m["prompt"]),
+					solution_text=str(m["solution_text"]),
+				)
+			)
+		except Exception:
+			continue
+	return items
+
+
+def replace_course_items(course_id: str, items: list[BankProblem], source_pdf_id: str | None = None) -> None:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		conn.execute(delete(course_items_table).where(course_items_table.c.course_id == course_id))
+		for idx, item in enumerate(items, start=1):
+			conn.execute(
+				insert(course_items_table).values(
+					course_id=course_id,
+					item_id=item.item_id,
+					position=idx,
+					title=item.title,
+					prompt=item.prompt,
+					solution_text=item.solution_text,
+					source_pdf_id=source_pdf_id,
+					updated_at_ms=now_ms,
+				)
+			)
+
+
+def update_course_item(course_id: str, item_id: str, title: str, prompt: str) -> bool:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		existing = conn.execute(
+			select(course_items_table.c.source_pdf_id)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.item_id == item_id)
+		).first()
+		updated = conn.execute(
+			update(course_items_table)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.item_id == item_id)
+			.values(title=title, prompt=prompt, updated_at_ms=now_ms)
+		)
+		if int(updated.rowcount or 0) > 0 and existing:
+			source_pdf_id = existing._mapping.get("source_pdf_id")
+			if source_pdf_id:
+				pdf_row = conn.execute(
+					select(course_pdfs_table.c.questions_json)
+					.where(course_pdfs_table.c.course_id == course_id)
+					.where(course_pdfs_table.c.pdf_id == str(source_pdf_id))
+				).first()
+				if pdf_row:
+					try:
+						questions = json.loads(str(pdf_row._mapping["questions_json"] or "[]"))
+					except Exception:
+						questions = []
+					if isinstance(questions, list):
+						changed = False
+						for question in questions:
+							if isinstance(question, dict) and str(question.get("id", "")) == item_id:
+								question["title"] = title
+								question["prompt"] = prompt
+								question["preview"] = prompt[:180]
+								changed = True
+						if changed:
+							conn.execute(
+								update(course_pdfs_table)
+								.where(course_pdfs_table.c.course_id == course_id)
+								.where(course_pdfs_table.c.pdf_id == str(source_pdf_id))
+								.values(questions_json=json.dumps(questions, ensure_ascii=False), updated_at_ms=now_ms)
+							)
+	return int(updated.rowcount or 0) > 0
+
+
+def add_course_pdf_item(course_id: str, pdf_id: str, title: str, prompt: str) -> dict[str, Any] | None:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		pdf_row = conn.execute(
+			select(course_pdfs_table.c.questions_json)
+			.where(course_pdfs_table.c.course_id == course_id)
+			.where(course_pdfs_table.c.pdf_id == pdf_id)
+		).first()
+		if not pdf_row:
+			return None
+		try:
+			questions = json.loads(str(pdf_row._mapping["questions_json"] or "[]"))
+		except Exception:
+			questions = []
+		if not isinstance(questions, list):
+			questions = []
+
+		existing_ids = {
+			str(question.get("id", "")).lower()
+			for question in questions
+			if isinstance(question, dict)
+		}
+		next_number = len(questions) + 1
+		item_id = f"{pdf_id}:Q{next_number}"
+		while item_id.lower() in existing_ids:
+			next_number += 1
+			item_id = f"{pdf_id}:Q{next_number}"
+
+		question = {
+			"id": item_id,
+			"title": title,
+			"prompt": prompt,
+			"preview": prompt[:180],
+		}
+		questions.append(question)
+
+		last_position = conn.execute(
+			select(course_items_table.c.position)
+			.where(course_items_table.c.course_id == course_id)
+			.order_by(course_items_table.c.position.desc())
+		).first()
+		position = int(last_position._mapping["position"]) + 1 if last_position else 1
+		conn.execute(
+			insert(course_items_table).values(
+				course_id=course_id,
+				item_id=item_id,
+				position=position,
+				title=title,
+				prompt=prompt,
+				solution_text="",
+				source_pdf_id=pdf_id,
+				updated_at_ms=now_ms,
+			)
+		)
+		conn.execute(
+			update(course_pdfs_table)
+			.where(course_pdfs_table.c.course_id == course_id)
+			.where(course_pdfs_table.c.pdf_id == pdf_id)
+			.values(questions_json=json.dumps(questions, ensure_ascii=False), updated_at_ms=now_ms)
+		)
+	return question
+
+
+def delete_course_item(course_id: str, item_id: str) -> bool:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		existing = conn.execute(
+			select(course_items_table.c.source_pdf_id)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.item_id == item_id)
+		).first()
+		if not existing:
+			return False
+		source_pdf_id = existing._mapping.get("source_pdf_id")
+		deleted = conn.execute(
+			delete(course_items_table)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.item_id == item_id)
+		)
+		if int(deleted.rowcount or 0) == 0:
+			return False
+		if source_pdf_id:
+			pdf_row = conn.execute(
+				select(course_pdfs_table.c.questions_json)
+				.where(course_pdfs_table.c.course_id == course_id)
+				.where(course_pdfs_table.c.pdf_id == str(source_pdf_id))
+			).first()
+			if pdf_row:
+				try:
+					questions = json.loads(str(pdf_row._mapping["questions_json"] or "[]"))
+				except Exception:
+					questions = []
+				if isinstance(questions, list):
+					next_questions = [
+						question
+						for question in questions
+						if not (isinstance(question, dict) and str(question.get("id", "")) == item_id)
+					]
+					conn.execute(
+						update(course_pdfs_table)
+						.where(course_pdfs_table.c.course_id == course_id)
+						.where(course_pdfs_table.c.pdf_id == str(source_pdf_id))
+						.values(questions_json=json.dumps(next_questions, ensure_ascii=False), updated_at_ms=now_ms)
+					)
+	return True
+
+
+def list_course_pdfs(course_id: str) -> list[dict[str, Any]]:
+	pdfs: list[dict[str, Any]] = []
+	with engine.begin() as conn:
+		rows = conn.execute(
+			select(
+				course_pdfs_table.c.pdf_id,
+				course_pdfs_table.c.filename,
+				course_pdfs_table.c.title,
+				course_pdfs_table.c.questions_json,
+				course_pdfs_table.c.created_at_ms,
+				course_pdfs_table.c.updated_at_ms,
+			)
+			.where(course_pdfs_table.c.course_id == course_id)
+			.order_by(course_pdfs_table.c.created_at_ms.desc())
+		).fetchall()
+	for row in rows:
+		m = row._mapping
+		try:
+			questions = json.loads(str(m["questions_json"] or "[]"))
+			if not isinstance(questions, list):
+				questions = []
+		except Exception:
+			questions = []
+		pdfs.append(
+			{
+				"id": str(m["pdf_id"]),
+				"filename": str(m["filename"]),
+				"title": str(m["title"]),
+				"questions": questions,
+				"created_at": int(m["created_at_ms"]),
+				"updated_at": int(m["updated_at_ms"]),
+			}
+		)
+	return pdfs
+
+
+def replace_course_pdf_items(course_id: str, pdf_id: str, items: list[BankProblem]) -> None:
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		conn.execute(
+			delete(course_items_table)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.source_pdf_id == pdf_id)
+		)
+		last_position = conn.execute(
+			select(course_items_table.c.position)
+			.where(course_items_table.c.course_id == course_id)
+			.order_by(course_items_table.c.position.desc())
+		).first()
+		position = int(last_position._mapping["position"]) if last_position else 0
+		for item in items:
+			position += 1
+			conn.execute(
+				insert(course_items_table).values(
+					course_id=course_id,
+					item_id=item.item_id,
+					position=position,
+					title=item.title,
+					prompt=item.prompt,
+					solution_text=item.solution_text,
+					source_pdf_id=pdf_id,
+					updated_at_ms=now_ms,
+				)
+			)
+
+
+def upsert_course_pdf(
+	course_id: str,
+	owner_user_id: int,
+	pdf_id: str,
+	filename: str,
+	title: str,
+	file_path: str,
+	questions: list[dict[str, Any]],
+) -> None:
+	now_ms = _now_ms()
+	questions_json = json.dumps(questions, ensure_ascii=False)
+	with engine.begin() as conn:
+		updated = conn.execute(
+			update(course_pdfs_table)
+			.where(course_pdfs_table.c.pdf_id == pdf_id)
+			.values(
+				course_id=course_id,
+				owner_user_id=owner_user_id,
+				filename=filename,
+				title=title,
+				file_path=file_path,
+				questions_json=questions_json,
+				updated_at_ms=now_ms,
+			)
+		)
+		if int(updated.rowcount or 0) == 0:
+			conn.execute(
+				insert(course_pdfs_table).values(
+					pdf_id=pdf_id,
+					course_id=course_id,
+					owner_user_id=owner_user_id,
+					filename=filename,
+					title=title,
+					file_path=file_path,
+					questions_json=questions_json,
+					created_at_ms=now_ms,
+					updated_at_ms=now_ms,
+				)
+			)
+
+
+def delete_course_pdf(course_id: str, pdf_id: str) -> str | None:
+	with engine.begin() as conn:
+		row = conn.execute(
+			select(course_pdfs_table.c.file_path)
+			.where(course_pdfs_table.c.course_id == course_id)
+			.where(course_pdfs_table.c.pdf_id == pdf_id)
+		).first()
+		if not row:
+			return None
+		conn.execute(
+			delete(course_items_table)
+			.where(course_items_table.c.course_id == course_id)
+			.where(course_items_table.c.source_pdf_id == pdf_id)
+		)
+		deleted = conn.execute(
+			delete(course_pdfs_table)
+			.where(course_pdfs_table.c.course_id == course_id)
+			.where(course_pdfs_table.c.pdf_id == pdf_id)
+		)
+	if int(deleted.rowcount or 0) == 0:
+		return None
+	return str(row._mapping.get("file_path") or "")
+
+
+def load_course_progress(course_id: str, session_id: str) -> SessionProgress | None:
+	with engine.begin() as conn:
+		row = conn.execute(
+			select(course_progress_table.c.progress_json)
+			.where(course_progress_table.c.course_id == course_id)
+			.where(course_progress_table.c.session_id == session_id)
+		).first()
+	if not row:
+		return None
+	try:
+		raw = json.loads(str(row._mapping["progress_json"]))
+		return SessionProgress(**raw)
+	except Exception:
+		return None
+
+
+def upsert_course_progress(course_id: str, session_id: str, progress: SessionProgress) -> None:
+	progress_json = json.dumps(progress.model_dump(), ensure_ascii=False)
+	now_ms = _now_ms()
+	with engine.begin() as conn:
+		updated = conn.execute(
+			update(course_progress_table)
+			.where(course_progress_table.c.course_id == course_id)
+			.where(course_progress_table.c.session_id == session_id)
+			.values(progress_json=progress_json, updated_at_ms=now_ms)
+		)
+		if int(updated.rowcount or 0) == 0:
+			conn.execute(
+				insert(course_progress_table).values(
+					course_id=course_id,
+					session_id=session_id,
+					progress_json=progress_json,
+					updated_at_ms=now_ms,
+				)
+			)
+
+
+def delete_course_progress(course_id: str, session_id: str) -> bool:
+	with engine.begin() as conn:
+		deleted = conn.execute(
+			delete(course_progress_table)
+			.where(course_progress_table.c.course_id == course_id)
+			.where(course_progress_table.c.session_id == session_id)
 		)
 	return int(deleted.rowcount or 0) > 0

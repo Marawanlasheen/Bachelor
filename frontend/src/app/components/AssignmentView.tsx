@@ -10,6 +10,7 @@ import { ChatPanel } from './ChatPanel';
 interface AssignmentViewProps {
   assignment: Assignment;
   sessionId: string;
+  courseId?: string | null;
   onBack: () => void;
   onQuestionSelect: (questionId: string | null) => void;
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
@@ -22,6 +23,7 @@ interface AssignmentViewProps {
 export function AssignmentView({
   assignment,
   sessionId,
+  courseId,
   onBack,
   onQuestionSelect,
   onSolutionSubmit,
@@ -355,6 +357,7 @@ export function AssignmentView({
             <CodeEditor
               question={selectedQuestion}
               sessionId={sessionId}
+              courseId={courseId}
               questionPrompt={selectedQuestion.prompt || selectedQuestion.description}
               onSolutionSubmit={onSolutionSubmit}
               onCodeChange={onCodeChange}
@@ -394,6 +397,7 @@ export function AssignmentView({
             >
               <ChatPanel
                 sessionId={sessionId}
+                courseId={courseId}
                 questionId={selectedQuestion.id}
                 questionPrompt={selectedQuestion.prompt || selectedQuestion.description}
                 currentCode={selectedQuestion.currentCode || selectedQuestion.solution || selectedQuestion.starterCode || ''}

@@ -114,6 +114,7 @@ async def _run_model(provider: str, model: str, llm: Any, user_prompt: str) -> d
 
 async def _run_chat_turn(
 	session_id: str,
+	course_id: str | None,
 	message: str,
 	question: str,
 	student_code: str,
@@ -136,7 +137,10 @@ async def _run_chat_turn(
 			"error": "GROQ_API_KEY is not set",
 		}
 
-	user_prompt = _build_chat_prompt_with_progress(session_id, message, question, student_code, chat_mode)
+	if course_id:
+		user_prompt = _build_chat_prompt_with_progress(course_id, session_id, message, question, student_code, chat_mode)
+	else:
+		user_prompt = _build_prompt(" ".join([message.strip(), question.strip()]).strip(), student_code)
 	history = CHAT_SESSIONS.get(session_id)
 	if history is None:
 		try:

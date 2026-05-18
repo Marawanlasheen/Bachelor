@@ -34,10 +34,28 @@ export interface TutorChatResponse {
   progress?: TutorProgressSummary | null;
 }
 
-export interface BankItemPublic {
+export interface CoursePublic {
+  id: string;
+  title: string;
+  description: string;
+  owner_user_id: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CourseItemPublic {
   item_id: string;
   title: string;
   prompt: string;
+}
+
+export interface CoursePdfPublic {
+  id: string;
+  filename: string;
+  title: string;
+  questions: UploadedQuestion[];
+  created_at: number;
+  updated_at: number;
 }
 
 export interface UploadedQuestion {
@@ -115,13 +133,14 @@ function authHeader(): Record<string, string> {
 
 export async function chat(params: {
   sessionId: string;
+  courseId?: string | null;
   message?: string;
   question?: string;
   studentCode?: string;
   chatMode?: 'main' | 'mini';
   temperature?: number;
 }): Promise<TutorChatResponse> {
-  const payload = {
+  const payload: Record<string, unknown> = {
     session_id: params.sessionId,
     message: params.message ?? '',
     question: params.question ?? '',
@@ -129,6 +148,9 @@ export async function chat(params: {
     chat_mode: params.chatMode ?? 'main',
     temperature: params.temperature ?? 0.2,
   };
+  if (params.courseId) {
+    payload.course_id = params.courseId;
+  }
 
   const response = await fetch(apiUrl('/chat'), {
     method: 'POST',
@@ -145,10 +167,13 @@ export async function chat(params: {
   return (await response.json()) as TutorChatResponse;
 }
 
-export async function getTrackerStatus(sessionId: string): Promise<{ progress: TutorProgressSummary }> {
-  const response = await fetch(apiUrl(`/tracker/status?session_id=${encodeURIComponent(sessionId)}`), {
-    headers: { ...authHeader() },
-  });
+export async function getTrackerStatus(params: { sessionId: string; courseId: string }): Promise<{ progress: TutorProgressSummary }> {
+  const response = await fetch(
+    apiUrl(`/tracker/status?course_id=${encodeURIComponent(params.courseId)}`),
+    {
+      headers: { ...authHeader() },
+    },
+  );
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
     const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
@@ -157,11 +182,11 @@ export async function getTrackerStatus(sessionId: string): Promise<{ progress: T
   return (await response.json()) as { progress: TutorProgressSummary };
 }
 
-export async function setCurrentItem(params: { sessionId: string; itemId: string }): Promise<{ progress: TutorProgressSummary }>{
+export async function setCurrentItem(params: { sessionId: string; courseId: string; itemId: string }): Promise<{ progress: TutorProgressSummary }>{
   const response = await fetch(apiUrl('/tracker/current'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader() },
-    body: JSON.stringify({ session_id: params.sessionId, item_id: params.itemId }),
+    body: JSON.stringify({ session_id: params.sessionId, course_id: params.courseId, item_id: params.itemId }),
   });
   if (!response.ok) {
     const detail = await parseJsonOrThrow(response).catch(() => null);
@@ -171,12 +196,134 @@ export async function setCurrentItem(params: { sessionId: string; itemId: string
   return (await response.json()) as { progress: TutorProgressSummary };
 }
 
-export async function listBankItems(): Promise<BankItemPublic[]> {
-  const response = await fetch(apiUrl('/bank/items'));
+export async function listCourses(): Promise<CoursePublic[]> {
+  const response = await fetch(apiUrl('/courses'), {
+    headers: { ...authHeader() },
+  });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not load courses.'));
   }
-  return (await response.json()) as BankItemPublic[];
+  return (await response.json()) as CoursePublic[];
+}
+
+export async function createCourse(params: { title: string; description: string }): Promise<CoursePublic> {
+  const response = await fetch(apiUrl('/courses'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ title: params.title, description: params.description }),
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not create this course.'));
+  }
+  return (await response.json()) as CoursePublic;
+}
+
+export async function deleteCourse(courseId: string): Promise<void> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(courseId)}`), {
+    method: 'DELETE',
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not delete this course.'));
+  }
+}
+
+export async function listCourseItems(courseId: string): Promise<CourseItemPublic[]> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(courseId)}/items`), {
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not load course items.'));
+  }
+  return (await response.json()) as CourseItemPublic[];
+}
+
+export async function updateCourseItem(params: { courseId: string; itemId: string; title: string; prompt: string }): Promise<void> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(params.courseId)}/items/${encodeURIComponent(params.itemId)}`), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ title: params.title, prompt: params.prompt }),
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not update this assignment.'));
+  }
+}
+
+export async function addCourseItem(params: { courseId: string; pdfId: string; title: string; prompt: string }): Promise<UploadedQuestion> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(params.courseId)}/pdfs/${encodeURIComponent(params.pdfId)}/items`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ title: params.title, prompt: params.prompt }),
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not add this question.'));
+  }
+  return (await response.json()) as UploadedQuestion;
+}
+
+export async function deleteCourseItem(params: { courseId: string; itemId: string }): Promise<void> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(params.courseId)}/items/${encodeURIComponent(params.itemId)}`), {
+    method: 'DELETE',
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not delete this question.'));
+  }
+}
+
+export async function listCoursePdfs(courseId: string): Promise<CoursePdfPublic[]> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(courseId)}/pdfs`), {
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not load course PDFs.'));
+  }
+  return (await response.json()) as CoursePdfPublic[];
+}
+
+export async function uploadCoursePdf(params: { courseId: string; assignmentName: string; file: File }): Promise<CoursePdfPublic> {
+  const formData = new FormData();
+  formData.append('assignment_name', params.assignmentName);
+  formData.append('pdf_file', params.file);
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(params.courseId)}/upload-pdf`), {
+    method: 'POST',
+    headers: { ...authHeader() },
+    body: formData,
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'We could not upload this course PDF.'));
+  }
+  return (await response.json()) as CoursePdfPublic;
+}
+
+export async function deleteCoursePdf(params: { courseId: string; pdfId: string }): Promise<void> {
+  const response = await fetch(apiUrl(`/courses/${encodeURIComponent(params.courseId)}/pdfs/${encodeURIComponent(params.pdfId)}`), {
+    method: 'DELETE',
+    headers: { ...authHeader() },
+  });
+  if (!response.ok) {
+    const detail = await parseJsonOrThrow(response).catch(() => null);
+    const msg = typeof detail?.detail === 'string' ? detail.detail : `HTTP ${response.status}`;
+    throw new Error(normalizeApiError(msg, 'Could not delete this course PDF.'));
+  }
 }
 
 export async function listUploadedAssignments(): Promise<UploadedAssignment[]> {

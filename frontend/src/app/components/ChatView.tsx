@@ -14,6 +14,7 @@ const DEFAULT_MESSAGE: ChatMessage = {
 interface ChatViewProps {
   sessionId: string;
   username: string;
+  courseId?: string | null;
   conversations: ChatConversation[];
   activeConversationId: string | null;
   onConversationsChange: (nextConversations: ChatConversation[], nextActiveId: string | null) => void;
@@ -55,6 +56,7 @@ function upsertConversation(conversations: ChatConversation[], nextConversation:
 export function ChatView({
   sessionId,
   username,
+  courseId,
   conversations,
   activeConversationId,
   onConversationsChange,
@@ -125,7 +127,7 @@ export function ChatView({
 
     try {
       setIsSending(true);
-      const result = await chat({ sessionId, message: userMessage.message, chatMode: 'main' });
+      const result = await chat({ sessionId, courseId, message: userMessage.message, chatMode: 'main' });
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',

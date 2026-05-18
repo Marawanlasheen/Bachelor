@@ -188,10 +188,17 @@ def _enforce_easy_chat_reply(text: str) -> str:
 	return trimmed
 
 
-def _build_chat_prompt_with_progress(session_id: str, message: str, question: str, student_code: str, chat_mode: str = "main") -> str:
+def _build_chat_prompt_with_progress(
+	course_id: str,
+	session_id: str,
+	message: str,
+	question: str,
+	student_code: str,
+	chat_mode: str = "main",
+) -> str:
 	with state.BANK_LOCK:
-		_ensure_session_progress(session_id)
-		progress = state.PROGRESS_BY_SESSION.get(session_id)
+		_ensure_session_progress(course_id, session_id)
+		progress = state.PROGRESS_BY_COURSE_SESSION.get((course_id, session_id))
 
 	context_parts: list[str] = []
 	if progress and progress.items:
@@ -217,7 +224,7 @@ def _build_chat_prompt_with_progress(session_id: str, message: str, question: st
 			or (cur and re.search(r"\b(stuck|help|confused|not\s+working|doesn't\s+work|error|exception|fails|wrong)\b", msg))
 		)
 		if is_assignment_related and cur:
-			prompt = _bank_prompt(cur.item_id) or ""
+			prompt = _bank_prompt(course_id, cur.item_id) or ""
 			if prompt.strip():
 				context_parts.append(f"Current question ({cur.item_id}):\n{prompt.strip()}")
 			else:

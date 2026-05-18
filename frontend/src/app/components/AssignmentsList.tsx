@@ -1,12 +1,26 @@
 import { motion } from 'motion/react';
+import type { ReactNode } from 'react';
 import { Assignment } from '../types';
 
 interface AssignmentsListProps {
   assignments: Assignment[];
   onAssignmentClick: (id: string) => void;
+  title?: string;
+  subtitle?: string;
+  actionSlot?: ReactNode;
+  emptyMessage?: string;
+  showProgress?: boolean;
 }
 
-export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsListProps) {
+export function AssignmentsList({
+  assignments,
+  onAssignmentClick,
+  title = 'Practice Assignments',
+  subtitle = 'Solve problems and practice your Java skills',
+  actionSlot,
+  emptyMessage = 'No practice assignments yet.',
+  showProgress = true,
+}: AssignmentsListProps) {
 
   return (
     <div className="h-full overflow-y-auto">
@@ -19,14 +33,24 @@ export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsL
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="mb-2">Practice Assignments</h1>
-              <p className="text-muted-foreground">Solve problems and practice your Java skills</p>
+              <h1 className="mb-2">{title}</h1>
+              <p className="text-muted-foreground">{subtitle}</p>
             </div>
+            {actionSlot}
           </div>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {assignments.map((assignment, index) => {
+          {assignments.length === 0 ? (
+            <motion.div
+              initial={{ y: 8, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.25 }}
+              className="bg-card rounded-xl border border-border p-8 text-sm text-muted-foreground md:col-span-2 lg:col-span-3"
+            >
+              {emptyMessage}
+            </motion.div>
+          ) : assignments.map((assignment, index) => {
             const solvedCount = assignment.questions.filter(q => q.solved).length;
             const totalCount = assignment.questions.length;
             const isComplete = assignment.progress === 100;
@@ -57,29 +81,37 @@ export function AssignmentsList({ assignments, onAssignmentClick }: AssignmentsL
                       </motion.div>
                       <div>
                         <h3 className="mb-1">{assignment.title}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {solvedCount}/{totalCount} problems solved
-                        </p>
+                        {showProgress ? (
+                          <p className="text-sm text-muted-foreground">
+                            {solvedCount}/{totalCount} problems solved
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            {totalCount} problems
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-3 mb-4">
-                    <div className="w-full bg-secondary rounded-full h-3 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${assignment.progress}%` }}
-                        transition={{ duration: 1, delay: 0.4 + index * 0.05, ease: 'easeOut' }}
-                        className="bg-primary h-3 rounded-full"
-                      />
+                  {showProgress ? (
+                    <div className="space-y-3 mb-4">
+                      <div className="w-full bg-secondary rounded-full h-3 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${assignment.progress}%` }}
+                          transition={{ duration: 1, delay: 0.4 + index * 0.05, ease: 'easeOut' }}
+                          className="bg-primary h-3 rounded-full"
+                        />
+                      </div>
+                      <div className="text-center">
+                        <span className="text-sm font-medium">{assignment.progress}% Complete</span>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <span className="text-sm font-medium">{assignment.progress}% Complete</span>
-                    </div>
-                  </div>
+                  ) : null}
 
                   <div className="w-full py-2.5 px-4 rounded-lg bg-primary text-primary-foreground text-center">
-                    {isComplete ? 'Review Assignment' : 'Continue Assignment'}
+                    {showProgress ? (isComplete ? 'Review Assignment' : 'Continue Assignment') : 'Open Assignment'}
                   </div>
                 </button>
               </motion.div>

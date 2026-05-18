@@ -6,6 +6,7 @@ import { chat, TutorModelResult } from '../api/tutorApi';
 
 interface ChatPanelProps {
   sessionId: string;
+  courseId?: string | null;
   questionId?: string;
   questionPrompt?: string;
   currentCode?: string;
@@ -25,6 +26,7 @@ const DEFAULT_MESSAGE: ChatMessage = {
 
 export function ChatPanel({
   sessionId,
+  courseId,
   questionId,
   questionPrompt,
   currentCode = '',
@@ -95,6 +97,7 @@ export function ChatPanel({
       setIsSending(true);
       const result = await chat({
         sessionId,
+        courseId,
         message: userMessage.message,
         question: questionPrompt ?? '',
         studentCode: currentCode,

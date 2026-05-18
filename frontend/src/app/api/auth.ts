@@ -1,7 +1,9 @@
 export interface AuthUser {
+  id: number;
   username: string;
   email: string;
   session_id: string;
+  role: 'student' | 'ta';
 }
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -74,12 +76,20 @@ async function postAuth(path: string, payload: { username?: string; email: strin
   return (await response.json()) as AuthResponse;
 }
 
-export async function signup(username: string, email: string, password: string): Promise<AuthResponse> {
-  return postAuth('/auth/signup', { username, email, password });
+export async function signupStudent(username: string, email: string, password: string): Promise<AuthResponse> {
+  return postAuth('/auth/student/signup', { username, email, password });
 }
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  return postAuth('/auth/login', { email, password });
+export async function loginStudent(email: string, password: string): Promise<AuthResponse> {
+  return postAuth('/auth/student/login', { email, password });
+}
+
+export async function signupTA(username: string, email: string, password: string): Promise<AuthResponse> {
+  return postAuth('/auth/ta/signup', { username, email, password });
+}
+
+export async function loginTA(email: string, password: string): Promise<AuthResponse> {
+  return postAuth('/auth/ta/login', { email, password });
 }
 
 export async function me(token: string): Promise<AuthResponse> {

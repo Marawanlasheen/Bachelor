@@ -13,6 +13,7 @@ class CompareRequest(BaseModel):
 
 class ChatRequest(BaseModel):
 	session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+	course_id: str | None = None
 	message: str = ""
 	question: str = ""
 	student_code: str = ""
@@ -39,11 +40,13 @@ class JavaCompileResponse(BaseModel):
 
 class ResetSessionRequest(BaseModel):
 	session_id: str = Field(..., min_length=1)
+	course_id: str | None = None
 	keep_progress: bool = False
 
 
 class SetCurrentRequest(BaseModel):
 	session_id: str = Field(..., min_length=1)
+	course_id: str = Field(..., min_length=1)
 	item_id: str = Field(..., min_length=1)
 
 
@@ -112,9 +115,11 @@ class LoginRequest(BaseModel):
 
 
 class AuthUser(BaseModel):
+	id: int
 	username: str
 	email: str
 	session_id: str
+	role: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -131,6 +136,52 @@ class AuthResponse(BaseModel):
 	token_type: str = "bearer"
 	user: AuthUser
 	progress: dict[str, Any] | None = None
+
+
+class CourseCreateRequest(BaseModel):
+	title: str = Field(..., min_length=2, max_length=120)
+	description: str = ""
+
+
+class CoursePublic(BaseModel):
+	id: str
+	title: str
+	description: str
+	owner_user_id: int
+	created_at: int
+	updated_at: int
+
+
+class CourseItemPublic(BaseModel):
+	item_id: str
+	title: str
+	prompt: str
+
+
+class CourseItemUpdateRequest(BaseModel):
+	title: str = Field(..., min_length=1, max_length=200)
+	prompt: str = Field(..., min_length=1)
+
+
+class CourseItemCreateRequest(BaseModel):
+	title: str = Field(..., min_length=1, max_length=200)
+	prompt: str = Field(..., min_length=1)
+
+
+class UploadedQuestion(BaseModel):
+	id: str
+	title: str
+	prompt: str
+	preview: str | None = None
+
+
+class CoursePdfPublic(BaseModel):
+	id: str
+	filename: str
+	title: str
+	questions: list[UploadedQuestion] = Field(default_factory=list)
+	created_at: int
+	updated_at: int
 
 
 class ChatMessageStored(BaseModel):
@@ -152,13 +203,6 @@ class ChatConversationUpsertRequest(BaseModel):
 	title: str = Field(..., min_length=1)
 	messages: list[ChatMessageStored] = Field(default_factory=list)
 	updated_at: int
-
-
-class UploadedQuestion(BaseModel):
-	id: str
-	title: str
-	prompt: str
-	preview: str | None = None
 
 
 class UploadedAssignment(BaseModel):

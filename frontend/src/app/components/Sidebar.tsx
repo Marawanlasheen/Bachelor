@@ -1,4 +1,5 @@
-import { FileText, MessageSquare, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Settings as SettingsIcon, Trash2, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut, MoreHorizontal, Settings as SettingsIcon, Trash2 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatConversation } from '../types';
 import {
@@ -21,7 +22,9 @@ import {
 
 interface SidebarProps {
   activeView: string;
-  onViewChange: (view: 'chat' | 'assignments' | 'pdf-upload' | 'settings') => void;
+  onViewChange: (view: string) => void;
+  menuItems: Array<{ id: string; label: string; icon: LucideIcon }>;
+  showRecents?: boolean;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   recents: ChatConversation[];
@@ -34,6 +37,8 @@ interface SidebarProps {
 export function Sidebar({
   activeView,
   onViewChange,
+  menuItems,
+  showRecents = true,
   isCollapsed,
   onToggleCollapse,
   recents,
@@ -42,14 +47,10 @@ export function Sidebar({
   onRecentDelete,
   onLogout,
 }: SidebarProps) {
-  const menuItems = [
-    { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
-    { id: 'assignments' as const, label: 'Assignments', icon: FileText },
-    { id: 'pdf-upload' as const, label: 'My Workspaces', icon: Upload },
-  ];
-
-  const normalizedView = ['assignment-detail'].includes(activeView)
-    ? 'assignments'
+  const normalizedView = ['assignment-detail', 'assignments'].includes(activeView)
+    ? 'courses'
+    : activeView === 'ta-course-detail'
+      ? 'ta-dashboard'
     : activeView;
   const isSettingsActive = normalizedView === 'settings';
 
@@ -112,7 +113,7 @@ export function Sidebar({
         })}
 
         <AnimatePresence mode="wait">
-          {!isCollapsed && (
+          {!isCollapsed && showRecents && (
             <motion.div
               key="recents"
               initial={{ opacity: 0 }}

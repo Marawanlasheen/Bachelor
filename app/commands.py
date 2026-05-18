@@ -15,7 +15,6 @@ from .bank import (
 	_normalize_item_id,
 	_now_ms,
 	_progress_summary,
-	_save_progress_store,
 )
 from .schemas import ModelResult, SessionProgress
 from . import state
@@ -61,6 +60,7 @@ def _parse_autograder_reply(text: str) -> tuple[bool, str] | None:
 
 
 async def _autograde_current_submission(
+	course_id: str,
 	session_id: str,
 	message: str,
 	student_code: str,
@@ -72,12 +72,12 @@ async def _autograde_current_submission(
 		return None
 
 	with state.BANK_LOCK:
-		_ensure_session_progress(session_id)
-		progress = state.PROGRESS_BY_SESSION.get(session_id)
+		_ensure_session_progress(course_id, session_id)
+		progress = state.PROGRESS_BY_COURSE_SESSION.get((course_id, session_id))
 		cur = _current_item(progress) if progress else None
 		if not cur:
 			return None
-		problem = _bank_problem(cur.item_id)
+		problem = _bank_problem(course_id, cur.item_id)
 		if not problem or not problem.solution_text.strip():
 			return None
 		# Don't waste calls if it's already solved.
@@ -134,7 +134,7 @@ async def _autograde_current_submission(
 		return None
 
 
-def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult | None, dict[str, object] | None]:
+def _handle_local_commands(course_id: str, session_id: str, message: str) -> tuple[ModelResult | None, dict[str, object] | None]:
 	msg = message.strip()
 	if not msg:
 		return None, None
@@ -143,16 +143,17 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 	msg_norm = re.sub(r"\s+", " ", msg.lower()).strip()
 
 	with state.BANK_LOCK:
-		_ensure_session_progress(session_id)
-		progress = state.PROGRESS_BY_SESSION.get(session_id)
+		_ensure_session_progress(course_id, session_id)
+		progress = state.PROGRESS_BY_COURSE_SESSION.get((course_id, session_id))
 		if not progress:
 			return None, None
 
 	def _set_current_and_return_prompt(item_id: str, reason: str) -> tuple[ModelResult, dict[str, object] | None]:
 		progress.current_item_id = item_id
 		progress.current_item_set_ms = _now_ms()
-		_save_progress_store()
-		prompt = _bank_prompt(item_id) or ""
+		from .bank import _save_progress_store
+		_save_progress_store(course_id, session_id, progress)
+		prompt = _bank_prompt(course_id, item_id) or ""
 		text = prompt.strip() if prompt.strip() else f"{item_id}: Exercise"
 		return (
 			ModelResult(
@@ -167,14 +168,14 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 				diagnostic_summary=None,
 				error=None,
 			),
-			_progress_summary(session_id),
+			_progress_summary(course_id, session_id),
 		)
 
 	# Explicit item id request: "E3-1", "3-1", "3.1"
 	# Keep this local so we never invent prompts.
 	explicit_id_match = re.search(r"(?i)\bE?\s*\d+\s*[-.]\s*\d+\b", msg)
 	if explicit_id_match:
-		item_id = _normalize_item_id(explicit_id_match.group(0))
+		item_id = _normalize_item_id(course_id, explicit_id_match.group(0))
 		if item_id and any(it.item_id.lower() == item_id.lower() for it in progress.items):
 			return _set_current_and_return_prompt(item_id, "Local explicit-item")
 
@@ -312,8 +313,9 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		# Set current item so follow-up questions (like "what does sms mean") have context.
 		progress.current_item_id = item_id
 		progress.current_item_set_ms = _now_ms()
-		_save_progress_store()
-		prompt = _bank_prompt(item_id) or ""
+		from .bank import _save_progress_store
+		_save_progress_store(course_id, session_id, progress)
+		prompt = _bank_prompt(course_id, item_id) or ""
 		if prompt.strip():
 			text = prompt.strip()
 		else:
@@ -332,7 +334,7 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 				diagnostic_summary=None,
 				error=None,
 			),
-			_progress_summary(session_id),
+			_progress_summary(course_id, session_id),
 		)
 
 	# Next question request
@@ -349,8 +351,9 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 		else:
 			progress.current_item_id = next_item.item_id
 			progress.current_item_set_ms = _now_ms()
-			_save_progress_store()
-			prompt = _bank_prompt(next_item.item_id) or f"{next_item.item_id}: {next_item.title}"
+			from .bank import _save_progress_store
+			_save_progress_store(course_id, session_id, progress)
+			prompt = _bank_prompt(course_id, next_item.item_id) or f"{next_item.item_id}: {next_item.title}"
 			text = prompt.strip()
 		return (
 			ModelResult(
@@ -365,7 +368,7 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 				diagnostic_summary=None,
 				error=None,
 			),
-			_progress_summary(session_id),
+			_progress_summary(course_id, session_id),
 		)
 
 	# Mark solved request (explicit)
@@ -373,13 +376,13 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 	if re.search(r"(?i)\b(/solved|solved|done|finished|completed)\b", msg):
 		id_match = re.search(r"(?i)\bE?\s*\d+\s*[-.]\s*\d+\b", msg)
 		if id_match:
-			item_id = _normalize_item_id(id_match.group(0))
+			item_id = _normalize_item_id(course_id, id_match.group(0))
 		else:
 			# If they didn't specify, mark the current question as solved.
 			item_id = progress.current_item_id
 
 		if item_id:
-			changed = _mark_solved(session_id, item_id)
+			changed = _mark_solved(course_id, session_id, item_id)
 			if changed:
 				text = f"Marked {item_id} as solved."
 			else:
@@ -397,7 +400,7 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 					diagnostic_summary=None,
 					error=None,
 				),
-				_progress_summary(session_id),
+				_progress_summary(course_id, session_id),
 			)
 
 	# "How many" / "what assignments" (keep it factual, not generic)
@@ -435,7 +438,7 @@ def _handle_local_commands(session_id: str, message: str) -> tuple[ModelResult |
 				diagnostic_summary=None,
 				error=None,
 			),
-			_progress_summary(session_id),
+			_progress_summary(course_id, session_id),
 		)
 
 	return None, None

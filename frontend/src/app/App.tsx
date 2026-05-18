@@ -1,30 +1,44 @@
 import { useState, useEffect } from 'react';
+import { ArrowLeft, FileText, MessageSquare, Upload } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { AssignmentsList } from './components/AssignmentsList';
 import { AssignmentView } from './components/AssignmentView';
 import { PdfUploadManager } from './components/PdfUploadManager';
 import { Settings } from './components/Settings';
+import { CoursesList } from './components/CoursesList';
+import { TACourseAssignmentsPage } from './components/TACourseAssignmentsPage';
+import { TACourseDashboard } from './components/TACourseDashboard';
+import { TAAssignmentEditor } from './components/TAAssignmentEditor';
 import { ToastViewport } from './components/ui/toast';
 import { Assignment, ChatConversation, ChatMessage } from './types';
 import { clearStoredAuth, getStoredAuth, saveStoredAuth, StoredAuth } from './api/session';
-import { changePassword, login, me, signup, updateUsername } from './api/auth';
+import { changePassword, loginStudent, loginTA, me, signupStudent, signupTA, updateUsername } from './api/auth';
 import {
   chat,
+  addCourseItem,
+  createCourse,
+  CoursePdfPublic,
+  CoursePublic,
+  deleteCourse,
+  deleteCourseItem,
   deleteUploadedAssignment,
   deleteChatConversationRemote,
   getTrackerStatus,
-  listBankItems,
+  listCoursePdfs,
+  listCourses,
   listChatConversationsRemote,
   listUploadedAssignments,
   saveChatConversationRemote,
   setCurrentItem,
+  updateCourseItem,
   UploadedAssignment,
   uploadAssignmentPdf,
+  uploadCoursePdf,
 } from './api/tutorApi';
 import { toast } from 'sonner';
 
-type View = 'chat' | 'assignments' | 'assignment-detail' | 'pdf-upload' | 'settings';
+type View = 'courses' | 'chat' | 'assignments' | 'assignment-detail' | 'pdf-upload' | 'settings' | 'ta-dashboard' | 'ta-course-detail';
 
 function shortDescription(prompt: string): string {
   const normalized = prompt.replace(/\s+/g, ' ').trim();
@@ -49,10 +63,34 @@ function buildStarterCode(questionTitle: string): string {
   ].join('\n');
 }
 
-function parseItemId(itemId: string): { pa: number; q: number } | null {
-  const m = itemId.trim().match(/^E\s*(\d+)\s*[-.]\s*(\d+)$/i);
-  if (!m) return null;
-  return { pa: Number(m[1]), q: Number(m[2]) };
+function buildAssignmentsFromCoursePdfs(
+  pdfs: CoursePdfPublic[],
+  solvedIds: string[],
+  drafts: Record<string, string>,
+): Assignment[] {
+  return pdfs.map((pdf) => {
+    const questions = pdf.questions.map((q) => ({
+      id: q.id,
+      title: q.title,
+      description: q.preview?.trim() || shortDescription(q.prompt),
+      prompt: q.prompt,
+      difficulty: 'Easy' as const,
+      solved: solvedIds.includes(q.id),
+      starterCode: buildStarterCode(q.title),
+      currentCode: drafts[q.id] ?? '',
+      chatHistory: [],
+    }));
+    const solvedCount = questions.filter((q) => q.solved).length;
+    return {
+      id: pdf.id,
+      title: pdf.title,
+      description: `${questions.length} problems`,
+      dueDate: '',
+      progress: computeProgressPercent(solvedCount, questions.length),
+      questions,
+      pdfUrl: '',
+    };
+  });
 }
 
 function questionDraftsKey(sessionId: string): string {
@@ -89,6 +127,7 @@ function clearQuestionDraft(sessionId: string, questionId: string): void {
 export default function App() {
   const [auth, setAuth] = useState<StoredAuth | null>(() => getStoredAuth());
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [roleInput, setRoleInput] = useState<'student' | 'ta'>('student');
   const [usernameInput, setUsernameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
@@ -98,117 +137,77 @@ export default function App() {
   const [uploadedAssignments, setUploadedAssignments] = useState<UploadedAssignment[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [courses, setCourses] = useState<CoursePublic[]>([]);
+  const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   const sessionId = auth?.sessionId ?? '';
+  const isTA = auth?.role === 'ta';
 
-  const reloadAssignments = async () => {
+  const reloadAssignments = async (courseIdOverride?: string | null) => {
+    const targetCourseId = courseIdOverride ?? activeCourseId;
     if (!auth || !sessionId) {
       setAssignments([]);
-      setUploadedAssignments([]);
+      return;
+    }
+
+    if (!targetCourseId) {
+      setAssignments([]);
       return;
     }
 
     try {
-      const items = await listBankItems();
+      const pdfs = await listCoursePdfs(targetCourseId);
       let solvedIds: string[] = [];
-      try {
-        const status = await getTrackerStatus(sessionId);
-        solvedIds = status.progress?.solved_ids ?? [];
-      } catch {
-        solvedIds = [];
-      }
-
-      const drafts = loadQuestionDrafts(sessionId);
-
-      let uploadedAssignmentsRaw: Awaited<ReturnType<typeof listUploadedAssignments>> = [];
-      try {
-        uploadedAssignmentsRaw = await listUploadedAssignments();
-      } catch {
-        uploadedAssignmentsRaw = [];
-      }
-      setUploadedAssignments(uploadedAssignmentsRaw);
-
-      const questions = items.map((it) => ({
-        id: it.item_id,
-        title: it.title,
-        description: shortDescription(it.prompt),
-        prompt: it.prompt,
-        difficulty: 'Easy' as const,
-        solved: solvedIds.includes(it.item_id),
-        starterCode: buildStarterCode(it.title),
-        currentCode: drafts[it.item_id] ?? '',
-        chatHistory: [],
-      }));
-
-      const grouped = new Map<number, Assignment>();
-      for (const q of questions) {
-        const parsed = parseItemId(q.id);
-        const paNumber = parsed?.pa ?? 1;
-        const existing = grouped.get(paNumber);
-        if (!existing) {
-          grouped.set(paNumber, {
-            id: `pa${paNumber}`,
-            title: `PA${paNumber}`,
-            description: `Practice Assignment ${paNumber}`,
-            dueDate: '',
-            progress: 0,
-            questions: [q],
-            pdfUrl: '',
-          });
-        } else {
-          existing.questions.push(q);
+      if (!isTA) {
+        try {
+          const status = await getTrackerStatus({ sessionId, courseId: targetCourseId });
+          solvedIds = status.progress?.solved_ids ?? [];
+        } catch {
+          solvedIds = [];
         }
       }
 
-      const sortedAssignments = Array.from(grouped.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map(([, assignment]) => {
-          assignment.questions.sort((a, b) => {
-            const aParsed = parseItemId(a.id);
-            const bParsed = parseItemId(b.id);
-            if (!aParsed || !bParsed) return a.id.localeCompare(b.id);
-            return aParsed.q - bParsed.q;
-          });
-          const solvedCount = assignment.questions.filter((q) => q.solved).length;
-          return {
-            ...assignment,
-            progress: computeProgressPercent(solvedCount, assignment.questions.length),
-          };
-        });
-
-      const uploadedAssignments: Assignment[] = uploadedAssignmentsRaw.map((assignment) => {
-        const questions = assignment.questions.map((q) => ({
-          id: q.id,
-          title: q.title,
-          description: q.preview?.trim() || shortDescription(q.prompt),
-          prompt: q.prompt,
-          difficulty: 'Easy' as const,
-          solved: false,
-          starterCode: buildStarterCode(q.title),
-          currentCode: drafts[q.id] ?? '',
-          chatHistory: [],
-        }));
-        const solvedCount = questions.filter((q) => q.solved).length;
-
-        return {
-          id: assignment.id,
-          title: assignment.title,
-          description: `${questions.length} uploaded questions`,
-          dueDate: '',
-          progress: computeProgressPercent(solvedCount, questions.length),
-          questions,
-          pdfUrl: '',
-        };
-      });
-
-      setAssignments([...uploadedAssignments, ...sortedAssignments]);
+      const drafts = loadQuestionDrafts(sessionId);
+      setAssignments(buildAssignmentsFromCoursePdfs(pdfs, solvedIds, drafts));
     } catch {
       setAssignments([]);
+    }
+  };
+
+  const reloadUploadedAssignments = async () => {
+    if (!auth || !sessionId) {
       setUploadedAssignments([]);
+      return;
+    }
+    try {
+      const uploadedAssignmentsRaw = await listUploadedAssignments();
+      setUploadedAssignments(uploadedAssignmentsRaw);
+    } catch {
+      setUploadedAssignments([]);
+    }
+  };
+
+  const reloadCourses = async () => {
+    if (!auth?.token) {
+      setCourses([]);
+      setActiveCourseId(null);
+      return;
+    }
+    try {
+      const rows = await listCourses();
+      setCourses(rows);
+      if (rows.length === 0) {
+        setActiveCourseId(null);
+        return;
+      }
+      const preferred = activeCourseId && rows.some((c) => c.id === activeCourseId) ? activeCourseId : rows[0].id;
+      setActiveCourseId(preferred);
+    } catch {
+      setCourses([]);
     }
   };
 
@@ -228,9 +227,11 @@ export default function App() {
         const res = await me(auth.token);
         const refreshed: StoredAuth = {
           token: res.access_token,
+          userId: res.user.id,
           username: res.user.username,
           email: res.user.email,
           sessionId: res.user.session_id,
+          role: res.user.role,
         };
         saveStoredAuth(refreshed);
         setAuth(refreshed);
@@ -245,11 +246,34 @@ export default function App() {
 
   useEffect(() => {
     if (!auth) {
+      setCourses([]);
+      setActiveCourseId(null);
+      return;
+    }
+    void reloadCourses();
+  }, [auth?.token]);
+
+  useEffect(() => {
+    if (!auth) return;
+    if (isTA && !['ta-dashboard', 'ta-course-detail', 'assignment-detail', 'chat', 'settings'].includes(activeView)) {
+      setActiveView('ta-dashboard');
+    }
+    if (!isTA && ['ta-dashboard', 'ta-course-detail'].includes(activeView)) {
+      setActiveView('courses');
+    }
+  }, [auth, isTA, activeView]);
+
+  useEffect(() => {
+    if (!auth) {
       setAssignments([]);
       return;
     }
 
     void reloadAssignments();
+  }, [sessionId, auth, activeCourseId, isTA]);
+
+  useEffect(() => {
+    void reloadUploadedAssignments();
   }, [sessionId, auth]);
 
   useEffect(() => {
@@ -297,23 +321,32 @@ export default function App() {
     try {
       setAuthLoading(true);
       if (authMode === 'signup') {
-        await signup(username, email, password);
+        if (roleInput === 'ta') {
+          await signupTA(username, email, password);
+        } else {
+          await signupStudent(username, email, password);
+        }
         toast.success('Account created successfully. Please log in to continue.');
         setAuthMode('login');
         setPasswordInput('');
         return;
       }
 
-      const res = await login(email, password);
+      const res = roleInput === 'ta'
+        ? await loginTA(email, password)
+        : await loginStudent(email, password);
       const nextAuth: StoredAuth = {
         token: res.access_token,
+        userId: res.user.id,
         username: res.user.username,
         email: res.user.email,
         sessionId: res.user.session_id,
+        role: res.user.role,
       };
       saveStoredAuth(nextAuth);
       setAuth(nextAuth);
       setPasswordInput('');
+      setActiveView(nextAuth.role === 'ta' ? 'ta-dashboard' : 'chat');
       toast.success(`Welcome back, ${nextAuth.username}.`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Authentication failed. Please try again.');
@@ -329,18 +362,40 @@ export default function App() {
     setSelectedQuestionId(null);
     setAssignments([]);
     setUploadedAssignments([]);
+    setCourses([]);
+    setActiveCourseId(null);
     setChatConversations([]);
     setActiveChatId(null);
     setActiveView('chat');
   };
 
-  const handleViewChange = (view: 'chat' | 'assignments' | 'pdf-upload' | 'settings') => {
+  const handleViewChange = (view: View) => {
     setActiveView(view);
     setSelectedAssignmentId(null);
     setSelectedQuestionId(null);
-    if (view === 'assignments' || view === 'pdf-upload') {
+    if (view === 'courses' || view === 'ta-dashboard') {
+      void reloadCourses();
+    }
+    if (view === 'assignments' || view === 'ta-course-detail') {
       void reloadAssignments();
     }
+    if (view === 'pdf-upload') {
+      void reloadUploadedAssignments();
+    }
+  };
+
+  const handleSelectCourse = (courseId: string) => {
+    setActiveCourseId(courseId);
+    setActiveView('assignments');
+    void reloadAssignments(courseId);
+  };
+
+  const handleTASelectCourse = (courseId: string) => {
+    setActiveCourseId(courseId);
+    setSelectedAssignmentId(null);
+    setSelectedQuestionId(null);
+    setActiveView('ta-course-detail');
+    void reloadAssignments(courseId);
   };
 
   const handleChatConversationsChange = (nextConversations: ChatConversation[], nextActiveId: string | null) => {
@@ -382,12 +437,12 @@ export default function App() {
 
   const handleUploadPdf = async (file: File, assignmentName: string) => {
     await uploadAssignmentPdf({ assignmentName, file });
-    await reloadAssignments();
+    await reloadUploadedAssignments();
   };
 
   const handleDeleteUploadedPdf = async (assignmentId: string) => {
     await deleteUploadedAssignment(assignmentId);
-    await reloadAssignments();
+    await reloadUploadedAssignments();
   };
 
   const handlePasswordChange = async (currentPassword: string, newPassword: string): Promise<string> => {
@@ -400,9 +455,11 @@ export default function App() {
     if (!auth) return 'Profile updated.';
     const nextAuth: StoredAuth = {
       token: res.access_token,
+      userId: res.user.id,
       username: res.user.username,
       email: res.user.email,
       sessionId: res.user.session_id,
+      role: res.user.role,
     };
     saveStoredAuth(nextAuth);
     setAuth(nextAuth);
@@ -416,23 +473,30 @@ export default function App() {
 
   const handleQuestionSelect = (questionId: string | null) => {
     setSelectedQuestionId(questionId);
+    const isUploaded = (selectedAssignmentId ?? '').startsWith('up_');
 
     if (questionId) {
-      void setCurrentItem({ sessionId, itemId: questionId }).catch(() => undefined);
+      if (activeCourseId && !isUploaded) {
+        void setCurrentItem({ sessionId, courseId: activeCourseId, itemId: questionId }).catch(() => undefined);
+      }
     } else {
       void reloadAssignments();
     }
   };
 
   const handleSolutionSubmit = async (questionId: string, code: string, chatHistory: ChatMessage[]) => {
-    const assignment = assignments.find((a) => a.id === selectedAssignmentId);
+    const assignment = allAssignmentCards.find((a) => a.id === selectedAssignmentId);
     const question = assignment?.questions.find((q) => q.id === questionId);
+    const isUploaded = (assignment?.id ?? '').startsWith('up_');
 
     try {
-      await setCurrentItem({ sessionId, itemId: questionId });
+      if (activeCourseId && !isUploaded) {
+        await setCurrentItem({ sessionId, courseId: activeCourseId, itemId: questionId });
+      }
       saveQuestionDraft(sessionId, questionId, code);
       const res = await chat({
         sessionId,
+        courseId: isUploaded ? null : activeCourseId,
         message: 'Here is my code submission.',
         question: question?.prompt || question?.description || '',
         studentCode: code,
@@ -517,7 +581,73 @@ export default function App() {
     );
   };
 
-  const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId);
+  const uploadedAssignmentCards: Assignment[] = uploadedAssignments.map((assignment) => {
+    const drafts = loadQuestionDrafts(sessionId);
+    const questions = assignment.questions.map((q) => ({
+      id: q.id,
+      title: q.title,
+      description: q.preview?.trim() || shortDescription(q.prompt),
+      prompt: q.prompt,
+      difficulty: 'Easy' as const,
+      solved: false,
+      starterCode: buildStarterCode(q.title),
+      currentCode: drafts[q.id] ?? '',
+      chatHistory: [],
+    }));
+    return {
+      id: assignment.id,
+      title: assignment.title,
+      description: `${questions.length} uploaded questions`,
+      dueDate: '',
+      progress: 0,
+      questions,
+      pdfUrl: '',
+    };
+  });
+
+  const allAssignmentCards = [...assignments, ...uploadedAssignmentCards];
+  const selectedAssignment = allAssignmentCards.find((a) => a.id === selectedAssignmentId);
+  const assignmentCourseId = selectedAssignment?.id?.startsWith('up_') ? null : activeCourseId;
+
+  const handleCreateCourse = async (title: string, description: string) => {
+    await createCourse({ title, description });
+    await reloadCourses();
+  };
+
+  const handleDeleteCourse = async (courseId: string) => {
+    await deleteCourse(courseId);
+    if (activeCourseId === courseId) {
+      setActiveCourseId(null);
+      setSelectedAssignmentId(null);
+      setSelectedQuestionId(null);
+      setActiveView('ta-dashboard');
+    }
+    await reloadCourses();
+  };
+
+  const handleUploadCoursePdf = async (file: File, name: string) => {
+    if (!activeCourseId) return;
+    await uploadCoursePdf({ courseId: activeCourseId, assignmentName: name, file });
+    await reloadAssignments();
+  };
+
+  const handleUpdateCourseItem = async (itemId: string, title: string, prompt: string) => {
+    if (!activeCourseId) return;
+    await updateCourseItem({ courseId: activeCourseId, itemId, title, prompt });
+    await reloadAssignments();
+  };
+
+  const handleAddCourseItem = async (assignmentId: string, title: string, prompt: string) => {
+    if (!activeCourseId) return;
+    await addCourseItem({ courseId: activeCourseId, pdfId: assignmentId, title, prompt });
+    await reloadAssignments();
+  };
+
+  const handleDeleteCourseItem = async (itemId: string) => {
+    if (!activeCourseId) return;
+    await deleteCourseItem({ courseId: activeCourseId, itemId });
+    await reloadAssignments();
+  };
 
   if (!auth) {
     return (
@@ -525,7 +655,24 @@ export default function App() {
         <ToastViewport />
         <div className="h-screen flex items-center justify-center bg-background p-6">
           <div className="w-full max-w-md bg-card border border-border rounded-xl p-6 space-y-4">
-            <h1 className="text-xl">Student Login</h1>
+            <h1 className="text-xl">{roleInput === 'ta' ? 'TA Login' : 'Student Login'}</h1>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`rounded-md border px-3 py-2 text-sm ${roleInput === 'student' ? 'border-primary bg-primary/10' : 'border-border'}`}
+                onClick={() => setRoleInput('student')}
+                type="button"
+              >
+                Student
+              </button>
+              <button
+                className={`rounded-md border px-3 py-2 text-sm ${roleInput === 'ta' ? 'border-primary bg-primary/10' : 'border-border'}`}
+                onClick={() => setRoleInput('ta')}
+                type="button"
+              >
+                TA
+              </button>
+            </div>
 
           {authMode === 'signup' ? (
             <div className="space-y-2">
@@ -574,7 +721,11 @@ export default function App() {
               disabled={authLoading}
               className="w-full text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors"
             >
-              {authMode === 'signup' ? 'Have an account? Login' : 'New student? Sign up'}
+              {authMode === 'signup'
+                ? 'Have an account? Login'
+                : roleInput === 'ta'
+                  ? 'New TA? Sign up'
+                  : 'New student? Sign up'}
             </button>
           </div>
         </div>
@@ -582,11 +733,24 @@ export default function App() {
     );
   }
 
+  const studentMenuItems = [
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+    { id: 'courses', label: 'Courses', icon: FileText },
+    { id: 'pdf-upload', label: 'My Workspaces', icon: Upload },
+  ];
+
+  const taMenuItems = [
+    { id: 'ta-dashboard', label: 'TA Dashboard', icon: FileText },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
+  ];
+
   return (
     <div className="h-screen flex bg-background">
       <Sidebar
         activeView={activeView}
         onViewChange={handleViewChange}
+        menuItems={isTA ? taMenuItems : studentMenuItems}
+        showRecents={!isTA && activeView === 'chat'}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         recents={chatConversations}
@@ -610,16 +774,42 @@ export default function App() {
           />
         )}
 
-        {activeView === 'assignments' && (
-          <AssignmentsList
-            assignments={assignments.filter((assignment) => !assignment.id.startsWith('up_'))}
-            onAssignmentClick={handleAssignmentClick}
+        {!isTA && activeView === 'courses' && (
+          <CoursesList
+            courses={courses}
+            activeCourseId={activeCourseId}
+            onSelectCourse={handleSelectCourse}
           />
         )}
 
-        {activeView === 'pdf-upload' && (
+        {!isTA && activeView === 'assignments' && (
+          <AssignmentsList
+            assignments={assignments}
+            onAssignmentClick={handleAssignmentClick}
+            title={courses.find((course) => course.id === activeCourseId)?.title ?? 'Practice Assignments'}
+            subtitle={courses.find((course) => course.id === activeCourseId)?.description || 'Solve problems and practice your Java skills'}
+            emptyMessage="No practice assignments have been uploaded for this course yet."
+            actionSlot={(
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAssignmentId(null);
+                  setSelectedQuestionId(null);
+                  setActiveView('courses');
+                  void reloadCourses();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-secondary/60 transition-colors whitespace-nowrap"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </button>
+            )}
+          />
+        )}
+
+        {!isTA && activeView === 'pdf-upload' && (
           <PdfUploadManager
-            assignmentCards={assignments.filter((assignment) => assignment.id.startsWith('up_'))}
+            assignmentCards={uploadedAssignmentCards}
             uploadedAssignments={uploadedAssignments}
             onUploadPdf={handleUploadPdf}
             onDeleteUploadedAssignment={handleDeleteUploadedPdf}
@@ -627,10 +817,11 @@ export default function App() {
           />
         )}
 
-        {activeView === 'assignment-detail' && selectedAssignment && (
+        {!isTA && activeView === 'assignment-detail' && selectedAssignment && (
           <AssignmentView
             assignment={selectedAssignment}
             sessionId={sessionId}
+            courseId={assignmentCourseId}
             onBack={() => {
               setActiveView('assignments');
               void reloadAssignments();
@@ -641,6 +832,44 @@ export default function App() {
             onQuestionReset={handleQuestionReset}
             onToggleQuestionSolved={handleToggleQuestionSolved}
             selectedQuestionId={selectedQuestionId}
+          />
+        )}
+
+        {isTA && activeView === 'ta-dashboard' && (
+          <TACourseDashboard
+            courses={courses}
+            userId={auth.userId}
+            onSelectCourse={handleTASelectCourse}
+            onCreateCourse={handleCreateCourse}
+          />
+        )}
+
+        {isTA && activeView === 'ta-course-detail' && courses.find((c) => c.id === activeCourseId) && (
+          <TACourseAssignmentsPage
+            course={courses.find((c) => c.id === activeCourseId)!}
+            assignments={assignments}
+            onBack={() => {
+              setSelectedAssignmentId(null);
+              setActiveView('ta-dashboard');
+            }}
+            onAssignmentClick={handleAssignmentClick}
+            onUploadPdf={handleUploadCoursePdf}
+            onDeleteCourse={() => activeCourseId ? handleDeleteCourse(activeCourseId) : Promise.resolve()}
+            showProgress={false}
+          />
+        )}
+
+        {isTA && activeView === 'assignment-detail' && selectedAssignment && (
+          <TAAssignmentEditor
+            assignment={selectedAssignment}
+            onBack={() => {
+              setSelectedAssignmentId(null);
+              setActiveView('ta-course-detail');
+              void reloadAssignments();
+            }}
+            onUpdateQuestion={handleUpdateCourseItem}
+            onAddQuestion={handleAddCourseItem}
+            onDeleteQuestion={handleDeleteCourseItem}
           />
         )}
 

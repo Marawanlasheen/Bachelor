@@ -2,7 +2,7 @@ import re
 import time
 from typing import Any
 
-from .db import load_all_progress, load_problem_bank as load_problem_bank_db, load_progress, upsert_progress
+from .db import list_course_items, load_course_progress, upsert_course_progress
 from .schemas import BankProblem, ProgressItem, SessionProgress
 from . import state
 
@@ -11,37 +11,27 @@ def _now_ms() -> int:
 	return int(time.time() * 1000)
 
 
-def _load_problem_bank() -> None:
+def _load_problem_bank(course_id: str) -> None:
 	try:
-		state.PROBLEM_BANK = load_problem_bank_db()
+		state.PROBLEM_BANK_BY_COURSE[course_id] = list_course_items(course_id)
 	except Exception:
-		state.PROBLEM_BANK = []
+		state.PROBLEM_BANK_BY_COURSE[course_id] = []
 
 
-def _load_progress_store() -> None:
+def _save_progress_store(course_id: str, session_id: str, progress: SessionProgress) -> None:
 	try:
-		loaded = load_all_progress()
-		state.PROGRESS_BY_SESSION.clear()
-		state.PROGRESS_BY_SESSION.update(loaded)
+		upsert_course_progress(course_id, session_id, progress)
 	except Exception:
 		return
 
 
-def _save_progress_store() -> None:
-	try:
-		for sid, progress in state.PROGRESS_BY_SESSION.items():
-			upsert_progress(sid, progress)
-	except Exception:
-		return
-
-
-def _sync_progress_with_bank(progress: SessionProgress) -> bool:
+def _sync_progress_with_bank(course_id: str, progress: SessionProgress) -> bool:
 	"""Ensure progress items match current bank while preserving solved state."""
 	existing = {it.item_id.lower(): it for it in progress.items}
 	updated_items: list[ProgressItem] = []
 	changed = False
 
-	for p in state.PROBLEM_BANK:
+	for p in state.PROBLEM_BANK_BY_COURSE.get(course_id, []):
 		old = existing.get(p.item_id.lower())
 		solved = bool(old.solved) if old else False
 		updated_items.append(ProgressItem(item_id=p.item_id, title=p.title, solved=solved))
@@ -66,24 +56,25 @@ def _sync_progress_with_bank(progress: SessionProgress) -> bool:
 	return changed
 
 
-def _ensure_session_progress(session_id: str) -> None:
-	if not state.PROBLEM_BANK:
-		_load_problem_bank()
-	if session_id in state.PROGRESS_BY_SESSION:
-		progress = state.PROGRESS_BY_SESSION[session_id]
-		if _sync_progress_with_bank(progress):
-			_save_progress_store()
+def _ensure_session_progress(course_id: str, session_id: str) -> None:
+	if course_id not in state.PROBLEM_BANK_BY_COURSE:
+		_load_problem_bank(course_id)
+	key = (course_id, session_id)
+	if key in state.PROGRESS_BY_COURSE_SESSION:
+		progress = state.PROGRESS_BY_COURSE_SESSION[key]
+		if _sync_progress_with_bank(course_id, progress):
+			_save_progress_store(course_id, session_id, progress)
 		return
 
-	loaded = load_progress(session_id)
+	loaded = load_course_progress(course_id, session_id)
 	if loaded is not None:
-		state.PROGRESS_BY_SESSION[session_id] = loaded
-		if _sync_progress_with_bank(loaded):
-			_save_progress_store()
+		state.PROGRESS_BY_COURSE_SESSION[key] = loaded
+		if _sync_progress_with_bank(course_id, loaded):
+			_save_progress_store(course_id, session_id, loaded)
 		return
 
-	items = [ProgressItem(item_id=p.item_id, title=p.title, solved=False) for p in state.PROBLEM_BANK]
-	state.PROGRESS_BY_SESSION[session_id] = SessionProgress(
+	items = [ProgressItem(item_id=p.item_id, title=p.title, solved=False) for p in state.PROBLEM_BANK_BY_COURSE.get(course_id, [])]
+	state.PROGRESS_BY_COURSE_SESSION[key] = SessionProgress(
 		items=items,
 		current_item_id=None,
 		current_item_set_ms=0,
@@ -91,11 +82,11 @@ def _ensure_session_progress(session_id: str) -> None:
 		last_submission_ms=0,
 		updated_at_ms=_now_ms(),
 	)
-	_save_progress_store()
+	_save_progress_store(course_id, session_id, state.PROGRESS_BY_COURSE_SESSION[key])
 
 
-def _progress_summary(session_id: str) -> dict[str, Any] | None:
-	progress = state.PROGRESS_BY_SESSION.get(session_id)
+def _progress_summary(course_id: str, session_id: str) -> dict[str, Any] | None:
+	progress = state.PROGRESS_BY_COURSE_SESSION.get((course_id, session_id))
 	if not progress:
 		return None
 	solved_items = [it for it in progress.items if it.solved]
@@ -116,21 +107,21 @@ def _next_unsolved_item(progress: SessionProgress) -> ProgressItem | None:
 	return None
 
 
-def _bank_prompt(item_id: str) -> str | None:
-	for p in state.PROBLEM_BANK:
+def _bank_prompt(course_id: str, item_id: str) -> str | None:
+	for p in state.PROBLEM_BANK_BY_COURSE.get(course_id, []):
 		if p.item_id.lower() == item_id.lower():
 			return p.prompt
 	return None
 
 
-def _bank_problem(item_id: str) -> BankProblem | None:
-	for p in state.PROBLEM_BANK:
+def _bank_problem(course_id: str, item_id: str) -> BankProblem | None:
+	for p in state.PROBLEM_BANK_BY_COURSE.get(course_id, []):
 		if p.item_id.lower() == item_id.lower():
 			return p
 	return None
 
 
-def _normalize_item_id(text: str) -> str | None:
+def _normalize_item_id(course_id: str, text: str) -> str | None:
 	# Accept: E1-2, e1.2, 1-2, 1.2
 	t = text.strip()
 	m = re.fullmatch(r"(?i)E?\s*(\d+)\s*[-.]\s*(\d+)", t)
@@ -141,15 +132,15 @@ def _normalize_item_id(text: str) -> str | None:
 	if m2:
 		# Try to resolve by searching for a matching *-N item in the loaded bank.
 		needle = m2.group(1)
-		for p in state.PROBLEM_BANK:
+		for p in state.PROBLEM_BANK_BY_COURSE.get(course_id, []):
 			if re.fullmatch(rf"(?i)E\d+[-.]\s*{re.escape(needle)}", p.item_id):
 				return p.item_id.replace(".", "-")
 		return None
 	return None
 
 
-def _mark_solved(session_id: str, item_id: str) -> bool:
-	progress = state.PROGRESS_BY_SESSION.get(session_id)
+def _mark_solved(course_id: str, session_id: str, item_id: str) -> bool:
+	progress = state.PROGRESS_BY_COURSE_SESSION.get((course_id, session_id))
 	if not progress:
 		return False
 	for it in progress.items:
@@ -158,7 +149,7 @@ def _mark_solved(session_id: str, item_id: str) -> bool:
 				return False
 			it.solved = True
 			progress.updated_at_ms = _now_ms()
-			_save_progress_store()
+			_save_progress_store(course_id, session_id, progress)
 			return True
 	return False
 

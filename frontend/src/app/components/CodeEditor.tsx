@@ -9,6 +9,7 @@ import { chat, compileJava, TutorModelResult } from '../api/tutorApi';
 interface CodeEditorProps {
   question: Question;
   sessionId: string;
+  courseId?: string | null;
   questionPrompt: string;
   onSolutionSubmit: (questionId: string, code: string, chatHistory: ChatMessage[]) => Promise<string | null>;
   onCodeChange: (questionId: string, code: string) => void;
@@ -22,6 +23,7 @@ interface CodeEditorProps {
 export function CodeEditor({
   question,
   sessionId,
+  courseId,
   questionPrompt,
   onSolutionSubmit,
   onCodeChange,
@@ -126,6 +128,7 @@ export function CodeEditor({
       setIsCheckingCode(true);
       const res = await chat({
         sessionId,
+        courseId,
         message: 'Please check my code and tell me if it is likely correct. If not, give one focused hint.',
         question: questionPrompt,
         studentCode: code,

@@ -25,5 +25,5 @@ CHAT_SESSIONS: dict[str, list[dict[str, str]]] = {}
 
 BANK_LOCK = Lock()
 
-PROBLEM_BANK: list[BankProblem] = []
-PROGRESS_BY_SESSION: dict[str, SessionProgress] = {}
+PROBLEM_BANK_BY_COURSE: dict[str, list[BankProblem]] = {}
+PROGRESS_BY_COURSE_SESSION: dict[tuple[str, str], SessionProgress] = {}
